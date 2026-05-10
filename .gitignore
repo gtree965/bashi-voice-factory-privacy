@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.venv-*.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+release_artifacts/
+
+# Logs and temp
+*.log
+launch_log.txt
+.tmp/
+tmp_*/
+tmp*/
+*.tmp
+*.bak
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets / local config
+.env
+.env.local
+*.secret
+
+# External reference material (not authored content)
+*.odt
+.~lock.*#
+
+# Tests stay local-only until fixtures are ready for public CI.
+tests/
+
+# Generated audio, except product UI style previews.
+static/audio/*
+!static/audio/style_previews/
+!static/audio/style_previews/**
+static/uploads/
+
+# Local model/data caches
+models/
+.backend_probe_cache.json
+*.gguf
+*.onnx
+*.onnx.data
+*.safetensors
+*.pt
+*.pth
+*.bin
+
