@@ -126,7 +126,6 @@ if (-not (Test-Path -LiteralPath $pthFile)) {
 (Get-Content -LiteralPath $pthFile) -replace '^#import site', 'import site' |
     Set-Content -LiteralPath $pthFile -Encoding ascii
 Add-PthEntry -PthFile $pthFile -Entry $AppRoot
-Add-PthEntry -PthFile $pthFile -Entry (Join-Path $WorkspaceRoot "LocalBashiVoiceFactory")
 Add-PthEntry -PthFile $pthFile -Entry (Join-Path $WorkspaceRoot "vulkan_backend_spike\Qwen3-TTS-GGUF")
 
 $python = Join-Path $WorkDir "python.exe"

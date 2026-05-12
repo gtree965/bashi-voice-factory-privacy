@@ -2,7 +2,6 @@ import gc
 import json
 import os
 import queue
-import sys
 import threading
 import time
 import uuid
@@ -16,18 +15,14 @@ from local_voice_catalog import build_voice_catalog
 
 
 APP_ROOT = Path(__file__).resolve().parent
-DEFAULT_KERNEL_DIR = (APP_ROOT.parent / "LocalBashiVoiceFactory").resolve()
-KERNEL_DIR = Path(os.environ.get("LOCAL_TTS_KERNEL_DIR", DEFAULT_KERNEL_DIR)).resolve()
+KERNEL_DIR = APP_ROOT / "bashi_tts_kernel"
 DEFAULT_MODEL_DIR = KERNEL_DIR / "models" / "Qwen3-TTS-12Hz-1.7B-CustomVoice"
 MODEL_DIR = Path(os.environ.get("LOCAL_TTS_PYTORCH_MODEL_DIR", DEFAULT_MODEL_DIR)).resolve()
 SPEAKERS_PATH = KERNEL_DIR / "speakers.json"
 OUTPUT_DIR = APP_ROOT / "static" / "audio"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-if str(KERNEL_DIR) not in sys.path:
-    sys.path.insert(0, str(KERNEL_DIR))
-
-from bashi_tts_core import BashiTTSEngine  # noqa: E402
+from bashi_tts_kernel.bashi_tts_core import BashiTTSEngine  # noqa: E402
 
 
 class LocalTTSError(RuntimeError):
@@ -338,7 +333,7 @@ class LocalTTSService:
             # signal and a terminal 100% tick.
             #
             # Note: the kernel's progress_callback only fires once per ~20-char
-            # chunk (LocalBashiVoiceFactory/bashi_tts_core.py, loop over
+            # chunk (bashi_tts_kernel/bashi_tts_core.py, loop over
             # chunks_text). On CPU each chunk is tens of seconds of inference,
             # so today the throttle rarely engages and the observed frame
             # cadence is dominated by kernel chunk time, not this throttle.

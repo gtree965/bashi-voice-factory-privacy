@@ -174,10 +174,9 @@ function Stage-Package {
     New-CleanDirectory -Path $StageRoot
 
     $appDest = Join-Path $StageRoot "bashi-privacy-app"
-    $kernelDest = Join-Path $StageRoot "LocalBashiVoiceFactory"
     $ggufDest = Join-Path $StageRoot "vulkan_backend_spike\Qwen3-TTS-GGUF"
 
-    New-Item -ItemType Directory -Force -Path $appDest, $kernelDest, $ggufDest | Out-Null
+    New-Item -ItemType Directory -Force -Path $appDest, $ggufDest | Out-Null
 
     $appFiles = @(
         "app.py",
@@ -210,14 +209,10 @@ function Stage-Package {
         Copy-RelativeFile -SourceRoot $AppRoot -RelativePath $file -DestRoot $appDest
     }
 
-    foreach ($dir in @("engines", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
+    foreach ($dir in @("bashi_tts_kernel", "engines", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
         Copy-RelativeDirectory -SourceRoot $AppRoot -RelativePath $dir -DestRoot $appDest
     }
     New-Item -ItemType Directory -Force -Path (Join-Path $appDest "models"), (Join-Path $appDest "static\audio"), (Join-Path $appDest "static\uploads") | Out-Null
-
-    foreach ($file in @("bashi_tts_core.py", "download_model.py", "README.md", "requirements.txt", "speakers.json", "zh_normalizer_lite.py")) {
-        Copy-RelativeFile -SourceRoot (Join-Path $WorkspaceRoot "LocalBashiVoiceFactory") -RelativePath $file -DestRoot $kernelDest
-    }
 
     $ggufSource = Join-Path $WorkspaceRoot "vulkan_backend_spike\Qwen3-TTS-GGUF"
     Copy-RelativeFile -SourceRoot $ggufSource -RelativePath "requirements.txt" -DestRoot $ggufDest

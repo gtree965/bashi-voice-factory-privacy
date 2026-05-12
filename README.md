@@ -49,8 +49,9 @@ $env:BASHI_GGUF_FILESFM_SHA256 = "<sha256-if-known>"
 主包包含：
 
 - `bashi-privacy-app/`：Flask 应用、UI、启动器、内置 Python
-- `LocalBashiVoiceFactory/`：本地 TTS kernel
 - `vulkan_backend_spike/Qwen3-TTS-GGUF/`：GGUF runtime 代码和空 `model-custom/`
+
+本地 TTS kernel 已合并在 `bashi-privacy-app/bashi_tts_kernel/` 内，发布包不再依赖上级目录中的旧工程。
 
 主包不包含：
 
@@ -61,14 +62,13 @@ $env:BASHI_GGUF_FILESFM_SHA256 = "<sha256-if-known>"
 
 ## 开发者说明
 
-以下命令面向 GitHub 仓库/开发工作区，不是给最终用户发布包使用。本仓库根目录是 `bashi-privacy-app/`，它引用同级目录：
+以下命令面向 GitHub 仓库/开发工作区，不是给最终用户发布包使用。本仓库根目录是 `bashi-privacy-app/`。它内置本地 TTS kernel，并引用同级目录中的 GGUF runtime：
 
 ```text
-../LocalBashiVoiceFactory/
 ../vulkan_backend_spike/Qwen3-TTS-GGUF/
 ```
 
-修改 `requirements.txt` 或 `../LocalBashiVoiceFactory/requirements.txt` 后，必须重跑 Python 3.12 embed 预检：
+修改 `requirements.txt` 后，必须重跑 Python 3.12 embed 预检：
 
 ```powershell
 .\scripts\precheck_py312_embed.ps1 -Index aliyun

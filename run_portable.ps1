@@ -62,7 +62,6 @@ function Configure-EmbeddedPython {
         Set-Content -LiteralPath $PthFile -Encoding ascii
 
     Add-PthEntry -Entry $AppRoot
-    Add-PthEntry -Entry (Join-Path $PackageRoot "LocalBashiVoiceFactory")
     Add-PthEntry -Entry (Join-Path $PackageRoot "vulkan_backend_spike\Qwen3-TTS-GGUF")
 }
 

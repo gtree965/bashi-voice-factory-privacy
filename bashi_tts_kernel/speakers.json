@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "default_speaker": "uncle_fu",
+  "model_family": "Qwen3-TTS-12Hz-1.7B-CustomVoice",
+  "speakers": [
+    {
+      "id": "uncle_fu",
+      "display_name": "福伯 Uncle_Fu",
+      "model_name": "uncle_fu",
+      "aliases": ["Uncle_Fu", "Uncle Fu", "uncle_fu"],
+      "native_language": "zh",
+      "recommended_for": ["zh"],
+      "notes": "Seasoned male voice with a low, mellow timbre.",
+      "notes_zh": "沉稳低沉的成熟男声，低频圆润，适合旁白、叙事和专业内容。"
+    },
+    {
+      "id": "vivian",
+      "display_name": "十三 Vivian",
+      "model_name": "vivian",
+      "aliases": ["Vivian", "vivian"],
+      "native_language": "zh",
+      "recommended_for": ["zh"],
+      "notes": "Bright, slightly edgy young female voice.",
+      "notes_zh": "明亮自信的年轻女声，清晰、略带锋芒，适合知识讲解和产品介绍。"
+    },
+    {
+      "id": "serena",
+      "display_name": "苏瑶 Serena",
+      "model_name": "serena",
+      "aliases": ["Serena", "serena"],
+      "native_language": "zh",
+      "recommended_for": ["zh"],
+      "notes": "Warm, gentle young female voice.",
+      "notes_zh": "温暖柔和的年轻女声，叙事感强，适合有声书、故事和陪伴型内容。"
+    },
+    {
+      "id": "dylan",
+      "display_name": "晓东 Dylan",
+      "model_name": "dylan",
+      "aliases": ["Dylan", "dylan"],
+      "native_language": "zh",
+      "recommended_for": ["zh"],
+      "notes": "Youthful Beijing male voice with a clear, natural timbre; native dialect is Beijing.",
+      "notes_zh": "清晰自然的北京青年男声，带地道北京话气息，适合生活化、幽默内容。"
+    },
+    {
+      "id": "eric",
+      "display_name": "程川 Eric",
+      "model_name": "eric",
+      "aliases": ["Eric", "eric"],
+      "native_language": "zh",
+      "recommended_for": ["zh"],
+      "notes": "Lively Chengdu male voice with a slightly husky brightness; native dialect is Sichuan.",
+      "notes_zh": "活泼的成都男声，略带沙哑和四川话松弛感，适合美食、旅行和轻松内容。"
+    },
+    {
+      "id": "ryan",
+      "display_name": "甜茶 Ryan",
+      "model_name": "ryan",
+      "aliases": ["Ryan", "ryan"],
+      "native_language": "en",
+      "recommended_for": ["en"],
+      "notes": "Dynamic male voice with rhythm.",
+      "notes_zh": "节奏感强的英语男声，适合英文播客、科技介绍和动态旁白。"
+    },
+    {
+      "id": "aiden",
+      "display_name": "艾登 Aiden",
+      "model_name": "aiden",
+      "aliases": ["Aiden", "aiden"],
+      "native_language": "en",
+      "recommended_for": ["en"],
+      "notes": "Sunny American male voice.",
+      "notes_zh": "阳光美式男声，中频清晰，适合品牌宣传和轻松英文内容。"
+    },
+    {
+      "id": "ono_anna",
+      "display_name": "小野杏 Ono_Anna",
+      "model_name": "ono_anna",
+      "aliases": ["Ono_Anna", "Ono Anna", "ono_anna"],
+      "native_language": "ja",
+      "recommended_for": ["ja"],
+      "notes": "Playful Japanese female voice.",
+      "notes_zh": "可爱轻快的日语女声，发音灵动，适合日语对话、角色和产品介绍。"
+    },
+    {
+      "id": "sohee",
+      "display_name": "素熙 Sohee",
+      "model_name": "sohee",
+      "aliases": ["Sohee", "sohee"],
+      "native_language": "ko",
+      "recommended_for": ["ko"],
+      "notes": "Warm Korean female voice.",
+      "notes_zh": "温暖细腻的韩语女声，情感丰富，适合韩语内容和温柔叙事。"
+    }
+  ]
+}

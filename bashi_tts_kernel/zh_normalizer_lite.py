@@ -1,0 +1,348 @@
+# -*- coding: utf-8 -*-
+"""
+Lightweight Chinese text normalizer for Qwen3-TTS.
+
+This module intentionally stays small. Qwen3-TTS handles most common Chinese
+text well on its own, so we only patch inputs that are known to read poorly:
+
+- Classical chapter references: 古书 1:1 -> 古书第一章第一节
+- Phone numbers: 138-1234-5678 -> 一三八 一二三四 五六七八
+- File paths / URLs: simplify to speakable names
+- Punctuation cleanup: remove repeated ellipses and long dash runs
+
+The public Privacy Edition keeps examples and reference text neutral so the
+source package can be published without carrying sensitive sample content.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class NormalizerLiteOptions:
+    """Options for the lightweight normalizer."""
+
+    enable_classical_ref: bool = True
+    enable_phone: bool = True
+    enable_filepath: bool = True
+    enable_punctuation_cleanup: bool = True
+
+
+_CLASSICAL_REF_BOOK_ENDINGS = set("记音篇书传歌录言训诗")
+_CLASSICAL_REF_EXCLUSIONS = {"游记", "日记", "笔记", "传记", "手记", "札记", "随笔录"}
+_CLASSICAL_REF_KEYWORDS = {
+    "古籍", "古文", "注释", "篇注", "卷注", "引文", "出处",
+}
+_PIAN_UNIT_NAMES = {"诗篇", "诗"}
+_LEFT_BRACKETS = "（([【「『《<"
+
+_DIGIT_MAP = {
+    "0": "零", "1": "一", "2": "二", "3": "三", "4": "四",
+    "5": "五", "6": "六", "7": "七", "8": "八", "9": "九",
+}
+
+_RE_CLASSICAL_REF = re.compile(
+    r"(\d{1,3})"
+    r"[:：]"
+    r"(\d{1,3})"
+    r"(?:"
+    r"[-–—~～]"
+    r"(?:(\d{1,3})[:：])?"
+    r"(\d{1,3})"
+    r")?"
+    r"(?:"
+    r"[,，]"
+    r"(\d{1,3})"
+    r"(?:[-–—~～](\d{1,3}))?"
+    r")?"
+)
+_RE_URL = re.compile(
+    r"(?:https?://)"
+    r"([\w.-]+)"
+    r"(?:[/\w.?=&#%-]*)"
+)
+_RE_WIN_PATH = re.compile(
+    r"[A-Za-z]:\\"
+    r"(?:[A-Za-z0-9_.-]+\\)*"
+    r"[A-Za-z0-9_.-]+"
+)
+_RE_UNIX_PATH = re.compile(
+    r"(?<![A-Za-z0-9])"
+    r"(?:/[A-Za-z0-9_.-]+){2,}"
+)
+_RE_ELLIPSIS = re.compile(r"[…]{1,}|\.{3,}")
+_RE_DASH = re.compile(r"[—–]{2,}")
+
+_RE_CN_MOBILE = re.compile(
+    r"(?<!\d)"
+    r"(1[3-9]\d)"
+    r"[-–]?"
+    r"(\d{4})"
+    r"[-–]?"
+    r"(\d{4})"
+    r"(?!\d)"
+)
+_RE_CN_LANDLINE = re.compile(
+    r"(?<!\d)"
+    r"(0\d{2,3})"
+    r"[-–]"
+    r"(\d{7,8})"
+    r"(?!\d)"
+)
+_RE_CN_LANDLINE_PAREN = re.compile(
+    r"(?<!\d)"
+    r"[（(]"
+    r"(0\d{2,3})"
+    r"[）)]"
+    r"\s*"
+    r"(\d{3,4})"
+    r"[-–]"
+    r"(\d{4})"
+    r"(?!\d)"
+)
+_RE_INTL_PREFIX = re.compile(
+    r"(?<![\d.])"
+    r"(\+\d{1,4})"
+    r"(?=(?:[-–\s]?\d{3,}))"
+    r"[-–\s]?"
+)
+_RE_SHORT_NUMBER = re.compile(
+    r"(?<!\d)"
+    r"(1(?:10|19|20|22)|12315|12345|114|120|122|999|911|112)"
+    r"(?![\d.])"
+)
+_RE_PHONE_CONTEXT = re.compile(
+    r"(电话|拨打|热线|客服|座机|手机|号码|号是|号为|联系|回电|办公室|报警|火警|急救|订票)"
+)
+
+
+def _num_to_chinese(n: int) -> str:
+    """Convert 0-999 into natural Chinese reading."""
+    if n < 0 or n > 999:
+        return str(n)
+    if n == 0:
+        return "零"
+
+    result = ""
+    hundreds = n // 100
+    tens = (n % 100) // 10
+    ones = n % 10
+
+    if hundreds > 0:
+        result += _DIGIT_MAP[str(hundreds)] + "百"
+        if tens == 0 and ones > 0:
+            result += "零"
+
+    if tens > 0:
+        if tens == 1 and hundreds == 0:
+            result += "十"
+        else:
+            result += _DIGIT_MAP[str(tens)] + "十"
+
+    if ones > 0:
+        result += _DIGIT_MAP[str(ones)]
+
+    return result
+
+
+def _digits_to_chinese(digits: str) -> str:
+    return "".join(_DIGIT_MAP.get(d, d) for d in digits)
+
+
+def _digits_grouped(digits: str, group_size: int = 4) -> str:
+    cn = _digits_to_chinese(digits)
+    groups = [cn[i:i + group_size] for i in range(0, len(cn), group_size)]
+    return " ".join(groups)
+
+
+def _has_classical_ref_context(text: str, match_start: int) -> bool:
+    window_start = max(0, match_start - 20)
+    before = text[window_start:match_start].rstrip()
+    trimmed = before
+    while trimmed and trimmed[-1] in _LEFT_BRACKETS:
+        trimmed = trimmed[:-1].rstrip()
+
+    for excl in _CLASSICAL_REF_EXCLUSIONS:
+        if trimmed.endswith(excl):
+            return False
+
+    if trimmed and trimmed[-1] in _CLASSICAL_REF_BOOK_ENDINGS:
+        return True
+
+    local_window = text[max(0, match_start - 12): min(len(text), match_start + 12)]
+    return any(keyword in local_window for keyword in _CLASSICAL_REF_KEYWORDS)
+
+
+def _uses_pian_unit(text: str, match_start: int) -> bool:
+    before = text[max(0, match_start - 10):match_start]
+    return any(name in before for name in _PIAN_UNIT_NAMES)
+
+
+def _convert_classical_ref(match: re.Match, full_text: str) -> str:
+    chapter = int(match.group(1))
+    start_section = int(match.group(2))
+    cross_chapter = match.group(3)
+    end_section = match.group(4)
+    cont_start = match.group(5)
+    cont_end = match.group(6)
+
+    unit = "篇" if _uses_pian_unit(full_text, match.start()) else "章"
+    result = f"第{_num_to_chinese(chapter)}{unit}第{_num_to_chinese(start_section)}节"
+
+    if end_section:
+        end_s = int(end_section)
+        if cross_chapter:
+            cross_ch = int(cross_chapter)
+            result += f"至第{_num_to_chinese(cross_ch)}{unit}第{_num_to_chinese(end_s)}节"
+        else:
+            result += f"至第{_num_to_chinese(end_s)}节"
+
+    if cont_start:
+        cont_s = int(cont_start)
+        result += f"、第{_num_to_chinese(cont_s)}节"
+        if cont_end:
+            cont_e = int(cont_end)
+            result += f"至第{_num_to_chinese(cont_e)}节"
+
+    return result
+
+
+def convert_classical_references(text: str) -> str:
+    """Convert neutral chapter-style references when surrounding context is clear."""
+
+    def _replacer(match: re.Match) -> str:
+        if _has_classical_ref_context(text, match.start()):
+            return _convert_classical_ref(match, text)
+        return match.group(0)
+
+    return _RE_CLASSICAL_REF.sub(_replacer, text)
+
+
+def convert_filepaths(text: str) -> str:
+    """Simplify file paths and URLs so they read naturally."""
+
+    def _replace_url(match: re.Match) -> str:
+        domain = match.group(1)
+        return domain[4:] if domain.startswith("www.") else domain
+
+    def _replace_win_path(match: re.Match) -> str:
+        path = match.group(0)
+        parts = [p for p in path.split("\\") if p]
+        return parts[-1] if parts else path
+
+    def _replace_unix_path(match: re.Match) -> str:
+        path = match.group(0)
+        parts = [p for p in path.split("/") if p]
+        return parts[-1] if parts else path
+
+    text = _RE_URL.sub(_replace_url, text)
+    text = _RE_WIN_PATH.sub(_replace_win_path, text)
+    text = _RE_UNIX_PATH.sub(_replace_unix_path, text)
+    return text
+
+
+def convert_phone_numbers(text: str) -> str:
+    """Convert likely phone numbers into stable digit-by-digit Chinese reading."""
+
+    def _has_phone_context(match: re.Match, window: int = 10) -> bool:
+        before = text[max(0, match.start() - window):match.start()]
+        after = text[match.end(): min(len(text), match.end() + window)]
+        return bool(_RE_PHONE_CONTEXT.search(before) or _RE_PHONE_CONTEXT.search(after))
+
+    def _replace_landline_paren(match: re.Match) -> str:
+        area = _digits_to_chinese(match.group(1))
+        first = _digits_to_chinese(match.group(2))
+        second = _digits_to_chinese(match.group(3))
+        return f"{area} {first} {second}"
+
+    def _replace_intl(match: re.Match) -> str:
+        digits = match.group(1)[1:]
+        return f"加{_digits_to_chinese(digits)}"
+
+    def _replace_mobile(match: re.Match) -> str:
+        return (
+            f"{_digits_to_chinese(match.group(1))} "
+            f"{_digits_to_chinese(match.group(2))} "
+            f"{_digits_to_chinese(match.group(3))}"
+        )
+
+    def _replace_landline(match: re.Match) -> str:
+        area = _digits_to_chinese(match.group(1))
+        number = _digits_grouped(match.group(2), 4)
+        return f"{area} {number}"
+
+    def _replace_short(match: re.Match) -> str:
+        if not _has_phone_context(match):
+            return match.group(0)
+        return _digits_to_chinese(match.group(1))
+
+    text = _RE_CN_LANDLINE_PAREN.sub(_replace_landline_paren, text)
+    text = _RE_INTL_PREFIX.sub(_replace_intl, text)
+    text = _RE_CN_MOBILE.sub(_replace_mobile, text)
+    text = _RE_CN_LANDLINE.sub(_replace_landline, text)
+    text = _RE_SHORT_NUMBER.sub(_replace_short, text)
+    return text
+
+
+def cleanup_punctuation(text: str) -> str:
+    text = _RE_ELLIPSIS.sub("，", text)
+    text = _RE_DASH.sub("，", text)
+    text = re.sub(r" {2,}", " ", text)
+    text = re.sub(r"[，,]{2,}", "，", text)
+    return text.strip()
+
+
+def normalize_chinese_text(
+    text: str,
+    options: Optional[NormalizerLiteOptions] = None,
+) -> str:
+    """
+    Apply lightweight Chinese TTS normalization.
+
+    The function avoids broad number/date normalization. Qwen3-TTS already
+    handles those well, so we only patch small unstable surfaces.
+    """
+    if not text or not text.strip():
+        return text
+
+    opts = options or NormalizerLiteOptions()
+    result = text
+
+    if opts.enable_filepath:
+        result = convert_filepaths(result)
+    if opts.enable_classical_ref:
+        result = convert_classical_references(result)
+    if opts.enable_phone:
+        result = convert_phone_numbers(result)
+    if opts.enable_punctuation_cleanup:
+        result = cleanup_punctuation(result)
+
+    return result
+
+
+if __name__ == "__main__":
+    test_cases = [
+        ("古书 1:1 起初有言。", "章节引用"),
+        ("诗23:1-6", "篇章范围"),
+        ("下午2:30开会", "时间不转换"),
+        ("比分3:2领先", "比分不转换"),
+        ("他的电话是138-1234-5678", "手机号"),
+        ("办公室电话：(010) 8888-9999", "固话"),
+        ("打开https://www.example.com/page?id=1", "URL"),
+        ("文件在C:\\Users\\Alex\\Documents里", "Windows路径"),
+        ("他说……算了吧", "省略号"),
+        ("这件事——很复杂", "破折号"),
+    ]
+
+    print("=" * 70)
+    print("  zh_normalizer_lite neutral public smoke test")
+    print("=" * 70)
+    for text, desc in test_cases:
+        result = normalize_chinese_text(text)
+        changed = "->" if result != text else "="
+        print(f"\n[{desc}]")
+        print(f"  Input:  {text}")
+        print(f"  Output: {result}  {changed}")

@@ -17,10 +17,8 @@ from local_voice_catalog import build_voice_catalog
 
 APP_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = APP_ROOT.parent
-DEFAULT_KERNEL_DIR = (REPO_ROOT / "LocalBashiVoiceFactory").resolve()
 DEFAULT_GGUF_DIR = (REPO_ROOT / "vulkan_backend_spike" / "Qwen3-TTS-GGUF").resolve()
 
-KERNEL_DIR = Path(os.environ.get("LOCAL_TTS_KERNEL_DIR", DEFAULT_KERNEL_DIR)).resolve()
 GGUF_DIR = Path(os.environ.get("GGUF_TTS_DIR", DEFAULT_GGUF_DIR)).resolve()
 GGUF_MODEL_DIR = Path(
     os.environ.get("GGUF_TTS_MODEL_DIR", GGUF_DIR / "model-custom")
@@ -29,15 +27,12 @@ GGUF_ONNX_PROVIDER = os.environ.get("GGUF_ONNX_PROVIDER", "DML")
 GGUF_LLM_USE_GPU = os.environ.get("GGUF_LLM_USE_GPU", "1") != "0"
 GGUF_VERBOSE = os.environ.get("GGUF_VERBOSE", "1") != "0"
 
-SPEAKERS_PATH = KERNEL_DIR / "speakers.json"
+SPEAKERS_PATH = APP_ROOT / "bashi_tts_kernel" / "speakers.json"
 OUTPUT_DIR = APP_ROOT / "static" / "audio"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-if str(KERNEL_DIR) not in sys.path:
-    sys.path.insert(0, str(KERNEL_DIR))
-
 try:
-    from zh_normalizer_lite import normalize_chinese_text
+    from bashi_tts_kernel.zh_normalizer_lite import normalize_chinese_text
 except ImportError:  # pragma: no cover - startup misconfiguration fallback
     def normalize_chinese_text(text, options=None):
         return text

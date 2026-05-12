@@ -2,7 +2,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -287,10 +286,7 @@ def _kernel_stream_chunk_count(text: str) -> int:
 
     if _selected_backend() == "pytorch":
         try:
-            kernel_root = Path(__file__).resolve().parents[1] / "LocalBashiVoiceFactory"
-            if str(kernel_root) not in sys.path:
-                sys.path.insert(0, str(kernel_root))
-            from bashi_tts_core import BashiTTSEngine  # noqa: WPS433
+            from bashi_tts_kernel.bashi_tts_core import BashiTTSEngine  # noqa: WPS433
 
             return len(BashiTTSEngine._split_stream_text(object(), text, max_chars=20))
         except Exception:
