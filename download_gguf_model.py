@@ -194,7 +194,7 @@ def print_modelscope_recovery_hint(error: Exception) -> None:
     print("稍后可重试，或用备用 zip 链接下载：")
     print()
     print("  $env:BASHI_GGUF_FILESFM_URL = \"https://.../gguf-runtime.zip\"")
-    print("  .\\.venv\\Scripts\\python.exe download_gguf_model.py")
+    print("  .\\python-3.12.10-embed-amd64\\python.exe download_gguf_model.py")
     print()
     print("If the fallback zip has a known SHA256, also set:")
     print("如果备用 zip 有 SHA256，也可以设置：")

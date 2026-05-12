@@ -19,6 +19,8 @@ dist/
 *.egg-info/
 *.egg
 release_artifacts/
+python-*-embed-amd64/
+python-*-embed-amd64.zip
 
 # Logs and temp
 *.log

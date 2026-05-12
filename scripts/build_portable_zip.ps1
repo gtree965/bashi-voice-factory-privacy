@@ -1,6 +1,6 @@
 param(
     [string]$Version = "",
-    [string]$PythonEmbedDir = "",
+    [string]$PythonEmbedZip = "",
     [switch]$NoPythonOnly,
     [switch]$SkipZip
 )
@@ -11,6 +11,10 @@ $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppRoot = (Resolve-Path -LiteralPath (Join-Path $ScriptRoot "..")).Path
 $WorkspaceRoot = (Resolve-Path -LiteralPath (Join-Path $AppRoot "..")).Path
 $DistRoot = Join-Path $AppRoot "dist"
+$EmbedZipName = "python-3.12.10-embed-amd64.zip"
+$EmbedDirName = "python-3.12.10-embed-amd64"
+$EmbedSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3"
+$EmbedDownloadUrl = "https://www.python.org/ftp/python/3.12.10/$EmbedZipName"
 
 if (-not $Version) {
     $Version = (Get-Content -LiteralPath (Join-Path $AppRoot "VERSION") -TotalCount 1).Trim()
@@ -31,6 +35,56 @@ function Assert-PathInside {
     if (-not $fullPath.StartsWith($fullParent + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to operate outside ${fullParent}: ${fullPath}"
     }
+}
+
+function Test-Sha256 {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Expected
+    )
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    return $actual.Equals($Expected, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Resolve-EmbedZip {
+    if ($PythonEmbedZip) {
+        $resolved = (Resolve-Path -LiteralPath $PythonEmbedZip).Path
+        if (-not (Test-Sha256 -Path $resolved -Expected $EmbedSha256)) {
+            throw "SHA256 mismatch for explicit Python embed zip: $resolved"
+        }
+        return $resolved
+    }
+
+    $cacheDir = Join-Path $WorkspaceRoot "release_artifacts\cached"
+    $cachedZip = Join-Path $cacheDir $EmbedZipName
+    $candidateZips = @(
+        $cachedZip,
+        (Join-Path $WorkspaceRoot $EmbedZipName),
+        (Join-Path $AppRoot $EmbedZipName)
+    )
+
+    foreach ($candidate in $candidateZips) {
+        if (Test-Sha256 -Path $candidate -Expected $EmbedSha256) {
+            if ($candidate -ne $cachedZip) {
+                New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+                Copy-Item -LiteralPath $candidate -Destination $cachedZip -Force
+            }
+            return (Resolve-Path -LiteralPath $cachedZip).Path
+        }
+    }
+
+    New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+    Write-Host "Downloading official Python embed zip: $EmbedDownloadUrl"
+    $ProgressPreference = "SilentlyContinue"
+    Invoke-WebRequest -Uri $EmbedDownloadUrl -OutFile $cachedZip -UseBasicParsing -ErrorAction Stop
+    if (-not (Test-Sha256 -Path $cachedZip -Expected $EmbedSha256)) {
+        Remove-Item -LiteralPath $cachedZip -Force -ErrorAction SilentlyContinue
+        throw "Downloaded Python embed zip failed SHA256 verification."
+    }
+    return (Resolve-Path -LiteralPath $cachedZip).Path
 }
 
 function New-CleanDirectory {
@@ -85,6 +139,7 @@ function Remove-StagedDebris {
 
     Get-ChildItem -LiteralPath $Root -Recurse -Force -File |
         Where-Object {
+            $_.Name -eq ".gitignore" -or
             $_.Name -like "*.pyc" -or
             $_.Name -like "*.pyo" -or
             $_.Name -like "*.log" -or
@@ -97,10 +152,23 @@ function Remove-StagedDebris {
         }
 }
 
+function Add-EmbedPython {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmbedZip,
+        [Parameter(Mandatory = $true)][string]$AppDest
+    )
+    $embedDest = Join-Path $AppDest $EmbedDirName
+    New-Item -ItemType Directory -Force -Path $embedDest | Out-Null
+    Expand-Archive -LiteralPath $EmbedZip -DestinationPath $embedDest -Force
+    if (-not (Test-Path -LiteralPath (Join-Path $embedDest "python.exe"))) {
+        throw "Expanded Python embed is missing python.exe: $embedDest"
+    }
+}
+
 function Stage-Package {
     param(
         [Parameter(Mandatory = $true)][string]$StageRoot,
-        [string]$EmbedDir = ""
+        [string]$EmbedZip = ""
     )
 
     New-CleanDirectory -Path $StageRoot
@@ -112,7 +180,6 @@ function Stage-Package {
     New-Item -ItemType Directory -Force -Path $appDest, $kernelDest, $ggufDest | Out-Null
 
     $appFiles = @(
-        ".gitignore",
         "app.py",
         "audio_encoding.py",
         "backend_probe.py",
@@ -143,7 +210,7 @@ function Stage-Package {
         Copy-RelativeFile -SourceRoot $AppRoot -RelativePath $file -DestRoot $appDest
     }
 
-    foreach ($dir in @("engines", "scripts", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
+    foreach ($dir in @("engines", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
         Copy-RelativeDirectory -SourceRoot $AppRoot -RelativePath $dir -DestRoot $appDest
     }
     New-Item -ItemType Directory -Force -Path (Join-Path $appDest "models"), (Join-Path $appDest "static\audio"), (Join-Path $appDest "static\uploads") | Out-Null
@@ -159,9 +226,8 @@ function Stage-Package {
     Copy-RelativeDirectory -SourceRoot $ggufSource -RelativePath "qwen3_tts_gguf\inference" -DestRoot $ggufDest
     New-Item -ItemType Directory -Force -Path (Join-Path $ggufDest "model-custom") | Out-Null
 
-    if ($EmbedDir) {
-        $resolvedEmbed = (Resolve-Path -LiteralPath $EmbedDir).Path
-        Copy-Item -LiteralPath $resolvedEmbed -Destination (Join-Path $appDest (Split-Path -Leaf $resolvedEmbed)) -Recurse -Force
+    if ($EmbedZip) {
+        Add-EmbedPython -EmbedZip $EmbedZip -AppDest $appDest
     }
 
     Remove-StagedDebris -Root $StageRoot
@@ -179,40 +245,29 @@ function Compress-StagedPackage {
     Compress-Archive -Path (Join-Path $StageRoot "*") -DestinationPath $ZipPath -CompressionLevel Optimal
 }
 
-$candidateEmbedDirs = @()
-if ($PythonEmbedDir) {
-    $candidateEmbedDirs += $PythonEmbedDir
-}
-$candidateEmbedDirs += (Join-Path $AppRoot "python-3.12.10-embed-amd64")
-$candidateEmbedDirs += (Join-Path $WorkspaceRoot "python-3.12.10-embed-amd64")
-$resolvedEmbedDir = $candidateEmbedDirs | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ "python.exe")) } | Select-Object -First 1
-
-$noPythonStage = Join-Path $DistRoot $PackageName
-$noPythonZip = Join-Path $DistRoot "$PackageName-windows-no-python.zip"
-Stage-Package -StageRoot $noPythonStage
-if (-not $SkipZip) {
-    Compress-StagedPackage -StageRoot $noPythonStage -ZipPath $noPythonZip
-}
-Write-Host "Prepared no-python package: $noPythonStage"
-if (-not $SkipZip) {
-    Write-Host "Created: $noPythonZip"
+if ($NoPythonOnly) {
+    $stage = Join-Path $DistRoot "$PackageName-no-python"
+    $zip = Join-Path $DistRoot "$PackageName-windows-no-python.zip"
+    Stage-Package -StageRoot $stage
+    if (-not $SkipZip) {
+        Compress-StagedPackage -StageRoot $stage -ZipPath $zip
+    }
+    Write-Host "Prepared no-python package: $stage"
+    if (-not $SkipZip) {
+        Write-Host "Created: $zip"
+    }
+    return
 }
 
-if (-not $NoPythonOnly) {
-    if ($resolvedEmbedDir) {
-        $withPythonStage = Join-Path $DistRoot "$PackageName-python"
-        $withPythonZip = Join-Path $DistRoot "$PackageName-windows.zip"
-        Stage-Package -StageRoot $withPythonStage -EmbedDir $resolvedEmbedDir
-        if (-not $SkipZip) {
-            Compress-StagedPackage -StageRoot $withPythonStage -ZipPath $withPythonZip
-        }
-        Write-Host "Prepared with-python package: $withPythonStage"
-        if (-not $SkipZip) {
-            Write-Host "Created: $withPythonZip"
-        }
-    }
-    else {
-        Write-Host "Portable Python embed folder not found; skipped with-python package."
-        Write-Host "Expected python.exe under python-3.12.10-embed-amd64."
-    }
+$resolvedEmbedZip = Resolve-EmbedZip
+Write-Host "Using Python embed zip: $resolvedEmbedZip"
+$stage = Join-Path $DistRoot $PackageName
+$zip = Join-Path $DistRoot "$PackageName-windows.zip"
+Stage-Package -StageRoot $stage -EmbedZip $resolvedEmbedZip
+if (-not $SkipZip) {
+    Compress-StagedPackage -StageRoot $stage -ZipPath $zip
+}
+Write-Host "Prepared portable package: $stage"
+if (-not $SkipZip) {
+    Write-Host "Created: $zip"
 }

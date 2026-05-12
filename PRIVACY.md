@@ -8,12 +8,13 @@ Bashi Voice Factory Privacy Edition is designed as a local desktop web app. User
 
 **首次启动**会从公开镜像下载所需资产（一次性）：
 
-- pip 依赖：约 500 MB，从 `https://mirrors.aliyun.com/pypi/simple/`
+- pip 初始化脚本：从 `https://bootstrap.pypa.io/get-pip.py`
+- pip 依赖：约 700 MB，从 `https://mirrors.aliyun.com/pypi/simple/`
 - GGUF 模型：约 2.2 GB，从 `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime`
 
-下载完成后，软件**完全离线运行**，所有 TTS 推理、音频生成、文件保存均在本机。
+首次启动通常需要约 15-25 分钟，具体取决于网速。下载完成后，软件**完全离线运行**，所有 TTS 推理、音频生成、文件保存均在本机。
 
-After these first-time downloads complete, the app runs offline. TTS inference, audio generation, and file saving happen locally.
+First launch usually takes about 15-25 minutes, depending on network speed. After these first-time downloads complete, the app runs offline. TTS inference, audio generation, and file saving happen locally.
 
 **唯一的运行时网络行为**：UI “查看最新版本” 按钮，由用户主动点击时跳转到 `https://files.fm/u/juvstxmrez`。软件本身不自动联网检查更新、不上传任何使用数据。
 
