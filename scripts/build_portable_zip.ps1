@@ -165,6 +165,30 @@ function Add-EmbedPython {
     }
 }
 
+function Assert-LauncherCompatibility {
+    param([Parameter(Mandatory = $true)][string]$AppDest)
+
+    $launcher = Join-Path $AppDest "run_portable.ps1"
+    if (-not (Test-Path -LiteralPath $launcher)) {
+        throw "Missing staged launcher: $launcher"
+    }
+
+    $smartQuotePattern = "[" + [char]0x201C + [char]0x201D + [char]0x2018 + [char]0x2019 + "]"
+    if (Select-String -LiteralPath $launcher -Pattern $smartQuotePattern -Quiet) {
+        throw "run_portable.ps1 contains smart quotes; Windows PowerShell will not parse it reliably."
+    }
+
+    $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (Test-Path -LiteralPath $windowsPowerShell) {
+        $escapedLauncher = $launcher.Replace("'", "''")
+        $parseCommand = '$ErrorActionPreference = "Stop"; $null = [scriptblock]::Create((Get-Content -LiteralPath ''' + $escapedLauncher + ''' -Raw))'
+        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $parseCommand
+        if ($LASTEXITCODE -ne 0) {
+            throw "run_portable.ps1 failed Windows PowerShell parser validation."
+        }
+    }
+}
+
 function Stage-Package {
     param(
         [Parameter(Mandatory = $true)][string]$StageRoot,
@@ -226,6 +250,7 @@ function Stage-Package {
     }
 
     Remove-StagedDebris -Root $StageRoot
+    Assert-LauncherCompatibility -AppDest $appDest
 }
 
 function Compress-StagedPackage {
