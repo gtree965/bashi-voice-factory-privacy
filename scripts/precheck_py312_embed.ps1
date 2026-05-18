@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$SourceEmbedDir = "",
     [string]$SourceEmbedZip = "",
     [string]$WorkDir = (Join-Path $env:TEMP "bashi-privacy-py312-embed-precheck"),

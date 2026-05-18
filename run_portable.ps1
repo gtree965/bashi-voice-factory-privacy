@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$BindHost = $env:BASHI_HOST,
     [int]$Port = $(if ($env:BASHI_PORT) { [int]$env:BASHI_PORT } else { 5050 })
 )

@@ -32,7 +32,8 @@ tmp*/
 *.bak
 
 # IDE / OS
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.swp
 .DS_Store

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Version = "",
     [string]$PythonEmbedZip = "",
     [switch]$NoPythonOnly,
@@ -168,23 +168,36 @@ function Add-EmbedPython {
 function Assert-LauncherCompatibility {
     param([Parameter(Mandatory = $true)][string]$AppDest)
 
-    $launcher = Join-Path $AppDest "run_portable.ps1"
-    if (-not (Test-Path -LiteralPath $launcher)) {
-        throw "Missing staged launcher: $launcher"
-    }
-
     $smartQuotePattern = "[" + [char]0x201C + [char]0x201D + [char]0x2018 + [char]0x2019 + "]"
-    if (Select-String -LiteralPath $launcher -Pattern $smartQuotePattern -Quiet) {
-        throw "run_portable.ps1 contains smart quotes; Windows PowerShell will not parse it reliably."
+    $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+
+    $psFiles = Get-ChildItem -LiteralPath $AppDest -Recurse -File -Filter *.ps1
+    if (-not $psFiles) {
+        throw "No .ps1 files staged under $AppDest"
     }
 
-    $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-    if (Test-Path -LiteralPath $windowsPowerShell) {
-        $escapedLauncher = $launcher.Replace("'", "''")
-        $parseCommand = '$ErrorActionPreference = "Stop"; $null = [scriptblock]::Create((Get-Content -LiteralPath ''' + $escapedLauncher + ''' -Raw))'
-        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $parseCommand
-        if ($LASTEXITCODE -ne 0) {
-            throw "run_portable.ps1 failed Windows PowerShell parser validation."
+    $mainLauncher = Join-Path $AppDest "run_portable.ps1"
+    if (-not (Test-Path -LiteralPath $mainLauncher)) {
+        throw "Missing staged launcher: $mainLauncher"
+    }
+
+    foreach ($file in $psFiles) {
+        $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+        if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+            throw ("Missing UTF-8 BOM in {0}; Windows PowerShell 5.1 mis-decodes BOM-less .ps1 under CJK ANSI code pages." -f $file.FullName)
+        }
+
+        if (Select-String -LiteralPath $file.FullName -Pattern $smartQuotePattern -Quiet) {
+            throw ("Smart quotes found in {0}; Windows PowerShell will not parse it reliably." -f $file.FullName)
+        }
+
+        if (Test-Path -LiteralPath $windowsPowerShell) {
+            $escaped = $file.FullName.Replace("'", "''")
+            $parseCommand = '$ErrorActionPreference = "Stop"; $null = [scriptblock]::Create((Get-Content -LiteralPath ''' + $escaped + ''' -Raw))'
+            & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $parseCommand
+            if ($LASTEXITCODE -ne 0) {
+                throw ("{0} failed Windows PowerShell parser validation." -f $file.FullName)
+            }
         }
     }
 }
