@@ -1,7 +1,19 @@
 import hashlib
+import os
+import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Generator, Optional
+
+
+DEFAULT_STT_MODELSCOPE_REPO = os.environ.get(
+    "BASHI_STT_MODELSCOPE_REPO",
+    "gtree592/bashi-stt-models",
+)
+IDLE_TIMEOUT_SECONDS = 30.0
+PROGRESS_INTERVAL_SECONDS = 0.5
+DOWNLOAD_CHUNK_SIZE = 64 * 1024
 
 
 # Model registry
@@ -14,11 +26,13 @@ MODEL_REGISTRY = {
         "languages": ["zh", "en", "ja", "ko", "yue"],
         "files": {
             "model.int8.onnx": {
+                "modelscope_path": "sensevoice-small-int8/model.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
                 "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
             },
             "tokens.txt": {
+                "modelscope_path": "sensevoice-small-int8/tokens.txt",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
                 "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
@@ -36,21 +50,25 @@ MODEL_REGISTRY = {
         "languages": ["en"],
         "files": {
             "encoder.int8.onnx": {
+                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/encoder.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/encoder.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/encoder.int8.onnx",
                 "sha256": "a32b12d17bbbc309d0686fbbcc2987b5e9b8333a7da83fa6b089f0a2acd651ab",
             },
             "decoder.int8.onnx": {
+                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/decoder.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/decoder.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/decoder.int8.onnx",
                 "sha256": "b6bb64963457237b900e496ee9994b59294526439fbcc1fecf705b31a15c6b4e",
             },
             "joiner.int8.onnx": {
+                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/joiner.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/joiner.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/joiner.int8.onnx",
                 "sha256": "7946164367946e7f9f29a122407c3252b680dbae9a51343eb2488d057c3c43d2",
             },
             "tokens.txt": {
+                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/tokens.txt",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/tokens.txt",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/tokens.txt",
                 "sha256": "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
@@ -65,11 +83,37 @@ MODEL_REGISTRY = {
 # VAD model (shared across engines)
 VAD_MODEL = {
     "silero_vad.onnx": {
+        "modelscope_path": "silero_vad.onnx",
         "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
         "size_mb": 2,
         "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
     }
 }
+
+
+def _modelscope_resolve_url(repo_id: str, path: str, revision: str = "master") -> str:
+    encoded_repo = "/".join(urllib.parse.quote(part) for part in repo_id.strip("/").split("/"))
+    encoded_path = "/".join(urllib.parse.quote(part) for part in path.replace("\\", "/").split("/"))
+    return f"https://modelscope.cn/models/{encoded_repo}/resolve/{revision}/{encoded_path}"
+
+
+def _build_url_order(file_meta: dict, use_mirror: bool = True) -> list:
+    urls = []
+    if file_meta.get("modelscope_path") and DEFAULT_STT_MODELSCOPE_REPO:
+        urls.append(_modelscope_resolve_url(DEFAULT_STT_MODELSCOPE_REPO, file_meta["modelscope_path"]))
+    if use_mirror and file_meta.get("mirror"):
+        urls.append(file_meta["mirror"])
+    if file_meta.get("url"):
+        urls.append(file_meta["url"])
+    if not use_mirror and file_meta.get("mirror"):
+        urls.append(file_meta["mirror"])
+    seen = set()
+    deduped = []
+    for u in urls:
+        if u and u not in seen:
+            seen.add(u)
+            deduped.append(u)
+    return deduped
 
 
 class ModelManager:
@@ -80,7 +124,6 @@ class ModelManager:
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
     def list_installed(self) -> list:
-        """List installed models with their metadata."""
         installed = []
         for model_id, meta in MODEL_REGISTRY.items():
             if self._is_model_complete(model_id):
@@ -88,7 +131,6 @@ class ModelManager:
         return installed
 
     def list_available(self) -> list:
-        """List models available for download (not yet installed)."""
         available = []
         for model_id, meta in MODEL_REGISTRY.items():
             if not self._is_model_complete(model_id):
@@ -96,7 +138,6 @@ class ModelManager:
         return available
 
     def _is_model_complete(self, model_id: str) -> bool:
-        """Check if all model files exist."""
         meta = MODEL_REGISTRY.get(model_id)
         if not meta:
             return False
@@ -107,13 +148,11 @@ class ModelManager:
         )
 
     def get_model_dir(self, model_id: str) -> Optional[Path]:
-        """Get path to installed model directory."""
         if self._is_model_complete(model_id):
             return self.models_dir / model_id
         return None
 
     def get_default_model_dir(self) -> Optional[Path]:
-        """Get path to the default installed model."""
         for model_id, meta in MODEL_REGISTRY.items():
             if meta.get("is_default") and self._is_model_complete(model_id):
                 return self.models_dir / model_id
@@ -125,9 +164,9 @@ class ModelManager:
     def download_model(
         self,
         model_id: str,
-        use_mirror: bool = False
+        use_mirror: bool = True
     ) -> Generator[dict, None, None]:
-        """Download model files with progress updates."""
+        """Download model files with byte-level progress updates."""
         meta = MODEL_REGISTRY.get(model_id)
         if not meta:
             yield {"status": "error", "error": f"Unknown model: {model_id}"}
@@ -136,101 +175,200 @@ class ModelManager:
         model_dir = self.models_dir / model_id
         model_dir.mkdir(parents=True, exist_ok=True)
 
-        total_files = len(meta["files"])
+        # VAD is a shared prerequisite; count it toward the total only if it
+        # actually needs to be downloaded, so the progress denominator stays
+        # honest across repeat downloads of different models.
+        vad_path = self.models_dir / "silero_vad.onnx"
+        need_vad = not vad_path.exists()
+        total_files = len(meta["files"]) + (1 if need_vad else 0)
         files_done = 0
 
-        vad_path = self.models_dir / "silero_vad.onnx"
-        if not vad_path.exists():
-            yield {"status": "downloading", "message": "Downloading VAD model...",
-                   "message_zh": "正在下载语音活动检测模型..."}
-            try:
-                vad_info = VAD_MODEL["silero_vad.onnx"]
-                self._download_file(vad_info["url"], vad_path, vad_info.get("sha256"))
-            except Exception as e:
-                yield {"status": "error", "error": f"VAD download failed: {e}"}
-                return
+        if need_vad:
+            vad_meta = VAD_MODEL["silero_vad.onnx"]
+            url_order = _build_url_order(vad_meta, use_mirror=use_mirror)
+            yield from self._download_one_file(
+                fname="silero_vad.onnx",
+                file_meta=vad_meta,
+                dest=vad_path,
+                url_order=url_order,
+                files_done=files_done,
+                total_files=total_files,
+            )
+            files_done += 1
 
-        for fname, urls in meta["files"].items():
+        for fname, file_meta in meta["files"].items():
             dest = model_dir / fname
             if dest.exists():
                 files_done += 1
                 continue
 
-            # Try mirror first (faster in China), fall back to main URL
-            if use_mirror:
-                url_order = [urls.get("mirror"), urls.get("url")]
-            else:
-                url_order = [urls.get("url"), urls.get("mirror")]
-            url_order = [u for u in url_order if u]  # remove None
-
-            progress = round((files_done / total_files) * 100, 1) if total_files > 0 else 0
-            yield {
-                "status": "downloading",
-                "file": fname,
-                "file_index": files_done + 1,
-                "total_files": total_files,
-                "progress": progress,
-                "message": f"Downloading {fname}...",
-                "message_zh": f"正在下载 {fname}...",
-            }
-
-            last_error = None
-            for url in url_order:
-                try:
-                    self._download_file(url, dest, urls.get("sha256"))
-                    files_done += 1
-                    last_error = None
-                    break
-                except Exception as e:
-                    last_error = e
-                    if url != url_order[-1]:
-                        yield {
-                            "status": "downloading",
-                            "message": f"Mirror failed, trying fallback for {fname}...",
-                            "message_zh": f"镜像下载失败，正在尝试备用地址 {fname}...",
-                        }
-
-            if last_error:
-                yield {"status": "error", "error": f"Download failed: {last_error}"}
+            url_order = _build_url_order(file_meta, use_mirror=use_mirror)
+            if not url_order:
+                yield {"status": "error", "error": f"No download URLs configured for {fname}"}
                 return
+
+            try:
+                yield from self._download_one_file(
+                    fname=fname,
+                    file_meta=file_meta,
+                    dest=dest,
+                    url_order=url_order,
+                    files_done=files_done,
+                    total_files=total_files,
+                )
+            except RuntimeError as e:
+                yield {"status": "error", "error": str(e)}
+                return
+            files_done += 1
 
         yield {"status": "done", "model_id": model_id}
 
+    def _download_one_file(
+        self,
+        fname: str,
+        file_meta: dict,
+        dest: Path,
+        url_order: list,
+        files_done: int,
+        total_files: int,
+    ) -> Generator[dict, None, None]:
+        """Try url_order in sequence; yield events; raise RuntimeError if all mirrors fail."""
+        # Initial "starting" event so the UI flips to this file immediately,
+        # even before the first chunk arrives.
+        yield {
+            "status": "downloading",
+            "file": fname,
+            "file_index": files_done + 1,
+            "total_files": total_files,
+            "bytes_done": 0,
+            "bytes_total": None,
+            "progress": round((files_done / total_files) * 100, 1) if total_files else 0,
+            "message": f"Starting {fname}...",
+            "message_zh": f"开始下载 {fname}...",
+        }
+
+        last_error = None
+        for url_idx, url in enumerate(url_order):
+            try:
+                yield from self._download_file_streaming(
+                    url=url,
+                    dest=dest,
+                    expected_sha256=file_meta.get("sha256"),
+                    fname_for_progress=fname,
+                    files_done=files_done,
+                    total_files=total_files,
+                )
+                return
+            except Exception as e:
+                last_error = e
+                if url_idx < len(url_order) - 1:
+                    yield {
+                        "status": "downloading",
+                        "file": fname,
+                        "file_index": files_done + 1,
+                        "total_files": total_files,
+                        "message": f"Mirror failed ({type(e).__name__}), trying fallback for {fname}...",
+                        "message_zh": f"镜像失败 ({type(e).__name__})，正在尝试备用源 {fname}...",
+                    }
+
+        raise RuntimeError(f"Download failed for {fname}: {last_error}")
+
+    def _download_file_streaming(
+        self,
+        url: str,
+        dest: Path,
+        expected_sha256: Optional[str],
+        fname_for_progress: str,
+        files_done: int,
+        total_files: int,
+    ) -> Generator[dict, None, None]:
+        """Stream a file to disk with HTTP Range/resume + byte progress yields.
+
+        Preserves the .part file across transient failures so the next mirror
+        attempt (or the next user retry) can resume from where this one stopped.
+        Only deletes .part on a hard checksum mismatch (bad body).
+        """
+        part = dest.with_suffix(dest.suffix + ".part")
+        resume_at = part.stat().st_size if part.exists() else 0
+        mode = "ab" if resume_at else "wb"
+
+        headers = {"User-Agent": "BashiVoiceFactory/0.1"}
+        if resume_at:
+            headers["Range"] = f"bytes={resume_at}-"
+        req = urllib.request.Request(url, headers=headers)
+
+        with urllib.request.urlopen(req, timeout=IDLE_TIMEOUT_SECONDS) as response:
+            if resume_at and getattr(response, "status", None) != 206:
+                # Server ignored Range; restart this file from 0
+                resume_at = 0
+                mode = "wb"
+
+            total_header = response.headers.get("Content-Length")
+            body_remaining = int(total_header) if total_header and total_header.isdigit() else None
+            total_bytes = (body_remaining + resume_at) if body_remaining is not None else None
+
+            downloaded = resume_at
+            last_report = 0.0
+
+            with open(part, mode) as out_file:
+                while True:
+                    chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    out_file.write(chunk)
+                    downloaded += len(chunk)
+                    now = time.monotonic()
+                    if now - last_report >= PROGRESS_INTERVAL_SECONDS:
+                        yield self._progress_event(
+                            fname_for_progress, files_done, total_files,
+                            downloaded, total_bytes,
+                        )
+                        last_report = now
+
+            yield self._progress_event(
+                fname_for_progress, files_done, total_files,
+                downloaded, total_bytes,
+            )
+
+        if expected_sha256:
+            actual = self._sha256_file(part)
+            if actual.lower() != expected_sha256.lower():
+                part.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"Checksum mismatch for {dest.name}: "
+                    f"expected {expected_sha256[:12]}..., got {actual[:12]}..."
+                )
+
+        part.replace(dest)
+
+    @staticmethod
+    def _progress_event(
+        fname: str,
+        files_done: int,
+        total_files: int,
+        bytes_done: int,
+        bytes_total: Optional[int],
+    ) -> dict:
+        within_file = (bytes_done / bytes_total) if bytes_total else 0
+        overall = ((files_done + within_file) / total_files) * 100 if total_files else 0
+        mb_done = bytes_done / 1024 / 1024
+        mb_total_text = f" / {bytes_total / 1024 / 1024:.1f} MB" if bytes_total else ""
+        return {
+            "status": "downloading",
+            "file": fname,
+            "file_index": files_done + 1,
+            "total_files": total_files,
+            "bytes_done": bytes_done,
+            "bytes_total": bytes_total,
+            "progress": round(overall, 1),
+            "message": f"Downloading {fname}... {mb_done:.1f} MB{mb_total_text}",
+            "message_zh": f"正在下载 {fname}... {mb_done:.1f} MB{mb_total_text}",
+        }
+
     @staticmethod
     def _sha256_file(path: Path) -> str:
-        """Compute SHA256 hex digest of a file."""
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(1024 * 64), b""):
                 h.update(chunk)
         return h.hexdigest()
-
-    def _download_file(self, url: str, dest: Path, expected_sha256: str = None):
-        """Download a file from URL to destination using chunked streaming."""
-        tmp = dest.with_suffix(dest.suffix + ".part")
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            # Use a long timeout (10 min) — model files can be 200+ MB on slow connections
-            with urllib.request.urlopen(req, timeout=600) as response, open(tmp, 'wb') as out_file:
-                chunk_size = 1024 * 64  # 64 KB chunks — flat memory usage regardless of file size
-                while True:
-                    chunk = response.read(chunk_size)
-                    if not chunk:
-                        break
-                    out_file.write(chunk)
-            # Verify checksum if provided
-            if expected_sha256:
-                actual = self._sha256_file(tmp)
-                if actual != expected_sha256:
-                    tmp.unlink()
-                    raise RuntimeError(
-                        f"Checksum mismatch for {dest.name}: "
-                        f"expected {expected_sha256[:12]}..., got {actual[:12]}..."
-                    )
-            # Atomic rename: only appears at dest once fully written
-            tmp.replace(dest)
-        except Exception:
-            # Remove partial file so next attempt retries cleanly
-            if tmp.exists():
-                tmp.unlink()
-            raise

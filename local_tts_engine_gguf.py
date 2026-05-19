@@ -26,6 +26,7 @@ GGUF_MODEL_DIR = Path(
 GGUF_ONNX_PROVIDER = os.environ.get("GGUF_ONNX_PROVIDER", "DML")
 GGUF_LLM_USE_GPU = os.environ.get("GGUF_LLM_USE_GPU", "1") != "0"
 GGUF_VERBOSE = os.environ.get("GGUF_VERBOSE", "1") != "0"
+GGUF_DECODER_READY_TIMEOUT = float(os.environ.get("GGUF_DECODER_READY_TIMEOUT", "60"))
 
 SPEAKERS_PATH = APP_ROOT / "bashi_tts_kernel" / "speakers.json"
 OUTPUT_DIR = APP_ROOT / "static" / "audio"
@@ -36,6 +37,39 @@ try:
 except ImportError:  # pragma: no cover - startup misconfiguration fallback
     def normalize_chinese_text(text, options=None):
         return text
+
+
+def _tail_gguf_runtime_log(max_lines: int = 12) -> str:
+    log_path = GGUF_DIR / "log" / "latest.log"
+    if not log_path.exists():
+        return ""
+    try:
+        lines = [
+            line.strip()
+            for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if line.strip()
+        ]
+    except Exception:
+        return ""
+    return " | ".join(lines[-max_lines:])
+
+
+def _patch_decoder_ready_timeout(timeout_seconds: float) -> None:
+    try:
+        from qwen3_tts_gguf.inference.proxy import DecoderProxy  # noqa: WPS433
+    except Exception:
+        return
+
+    current = DecoderProxy.wait_until_ready
+    original = getattr(current, "_bashi_original_wait_until_ready", current)
+
+    def wait_until_ready_with_bashi_timeout(self, timeout=10):
+        effective_timeout = max(float(timeout or 0), float(timeout_seconds))
+        return original(self, timeout=effective_timeout)
+
+    wait_until_ready_with_bashi_timeout._bashi_original_wait_until_ready = original
+    DecoderProxy.wait_until_ready = wait_until_ready_with_bashi_timeout
+
 
 SAMPLE_RATE = 24000
 LONG_CHUNK_TRIM_PEAK_RATIO = 0.02
@@ -122,6 +156,7 @@ class LocalTTSService:
 
                 from qwen3_tts_gguf.inference import TTSEngine  # noqa: WPS433
 
+                _patch_decoder_ready_timeout(GGUF_DECODER_READY_TIMEOUT)
                 self._engine = TTSEngine(
                     model_dir=str(GGUF_MODEL_DIR),
                     onnx_provider=GGUF_ONNX_PROVIDER,
@@ -129,7 +164,14 @@ class LocalTTSService:
                     verbose=GGUF_VERBOSE,
                 )
                 if not self._engine or not self._engine.ready:
-                    raise LocalTTSError("GGUF TTS engine did not reach ready state")
+                    detail = (
+                        "GGUF TTS engine did not reach ready state "
+                        f"after waiting up to {GGUF_DECODER_READY_TIMEOUT:.0f}s for decoder workers"
+                    )
+                    log_tail = _tail_gguf_runtime_log()
+                    if log_tail:
+                        detail = f"{detail}; GGUF runtime log tail: {log_tail}"
+                    raise LocalTTSError(detail)
 
                 self._state = "ready"
                 self._load_error = None

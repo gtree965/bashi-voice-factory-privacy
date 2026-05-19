@@ -437,6 +437,20 @@ def probe_pytorch_backend(
     text: str = PROBE_TEXT,
     voice_id: str = PROBE_VOICE_ID,
 ) -> ProbeOutcome:
+    # v0.1 thin-zip distribution does not ship PyTorch weights. If the
+    # expected model directory is missing or empty, bail before the kernel
+    # tries to load and crashes. Avoids a confusing "Loading Qwen3-TTS |
+    # Device: CPU | Path: <missing>" trace on non-NVIDIA hardware that fell
+    # through from a failed GGUF probe.
+    model_dir = Path(__file__).resolve().parent / "bashi_tts_kernel" / "models" / MODEL_DEFAULT
+    if not model_dir.exists() or not any(model_dir.iterdir()):
+        return ProbeOutcome(
+            False,
+            "PyTorch model weights not present in this distribution "
+            f"(expected at {model_dir}). PyTorch backend is reserved for "
+            "NVIDIA CUDA setups; non-NVIDIA hardware should use GGUF."
+        )
+
     start = time.perf_counter()
     service = None
     try:

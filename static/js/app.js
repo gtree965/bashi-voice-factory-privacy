@@ -1966,8 +1966,13 @@ async function downloadSelectedModel() {
                     if (data.status === 'downloading') {
                         const pct = data.progress != null ? data.progress : 0;
                         fill.style.width = `${pct}%`;
-                        const msg = state.currentLang === 'zh' && data.message_zh ? data.message_zh : (data.message || `Downloading ${data.file || ''}...`);
-                        text.textContent = data.file ? `${msg} (${data.file_index}/${data.total_files})` : msg;
+                        let progressLine = state.currentLang === 'zh' && data.message_zh
+                            ? data.message_zh
+                            : (data.message || `Downloading ${data.file || ''}...`);
+                        if (data.file_index != null && data.total_files != null) {
+                            progressLine += ` (${data.file_index}/${data.total_files})`;
+                        }
+                        text.textContent = progressLine;
                     } else if (data.status === 'done') {
                         fill.style.width = '100%';
                         text.textContent = state.currentLang === 'zh' ? '下载完成！' : 'Download Complete!';

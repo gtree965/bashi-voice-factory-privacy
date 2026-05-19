@@ -33,6 +33,25 @@ function Invoke-NativeCommand {
     }
 }
 
+function Invoke-NativeCommandWithUtf8Log {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Command
+    )
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Write-Host $line
+            Add-Content -Path $LogFile -Encoding utf8 -Value $line
+        }
+        return $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+}
+
 function Add-PthEntry {
     param(
         [Parameter(Mandatory = $true)][string]$Entry
@@ -137,15 +156,22 @@ $dependencyCheckCode = 'import importlib.metadata as m; [m.version(p) for p in (
 $dependencyCheckExit = Invoke-NativeCommand { & $Python -c $dependencyCheckCode *> $null }
 if ($dependencyCheckExit -ne 0) {
     Write-Host ""
-    Write-Host '[INFO] Installing or repairing dependencies. This usually takes 8-10 minutes on a good connection.'
-    Write-Host '[INFO] 正在安装或修复依赖。网络顺畅时通常需要 8-10 分钟。'
+    Write-Host '[INFO] Installing or repairing dependencies. This usually takes 8-10 minutes on a good connection, longer on entry-level CPUs.'
+    Write-Host '[INFO] 正在安装或修复依赖。网络顺畅时通常需要 8-10 分钟；入门级 CPU 可能需要 15 分钟以上。'
+    Write-Host '[INFO] Per-package progress will scroll below — please wait, do not close this window.'
+    Write-Host '[INFO] 下方会持续滚动每个依赖包的下载进度——请耐心等待，不要关闭此窗口。'
+    Write-Host ""
     '[STEP] pip install -r requirements.txt' | Add-Content -Path $LogFile -Encoding utf8
 
-    $pipInstallExit = Invoke-NativeCommand { & $Python -m pip install -r requirements.txt --prefer-binary --no-warn-script-location @pipArgs *>> $LogFile }
+    $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
+        & $Python -m pip install -r requirements.txt --prefer-binary --no-warn-script-location --progress-bar on @pipArgs
+    }
     if ($pipInstallExit -ne 0) {
         Write-Host '[WARN] First install attempt failed, retrying without cache...'
         Write-Host "       首次安装失败，正在清除缓存重试..."
-        $pipRetryExit = Invoke-NativeCommand { & $Python -m pip install -r requirements.txt --prefer-binary --no-cache-dir --no-warn-script-location @pipArgs *>> $LogFile }
+        $pipRetryExit = Invoke-NativeCommandWithUtf8Log {
+            & $Python -m pip install -r requirements.txt --prefer-binary --no-cache-dir --no-warn-script-location --progress-bar on @pipArgs
+        }
         if ($pipRetryExit -ne 0) {
             Write-Host '[ERROR] Failed to install dependencies from requirements.txt.'
             Write-Host "        依赖组件安装失败。"
@@ -248,7 +274,8 @@ Write-Host ""
 
 ('[STEP] Starting app.py with host={0} port={1}' -f $BindHost, $Port) | Add-Content -Path $LogFile -Encoding utf8
 $pythonCommand = "`"$Python`" app.py --host `"$BindHost`" --port `"$Port`" 2>> `"$LogFile`""
-$exitCode = Invoke-NativeCommand { & cmd.exe /d /c $pythonCommand }
+& cmd.exe /d /c $pythonCommand
+$exitCode = $LASTEXITCODE
 ('[DONE] app.py exited with code {0}' -f $exitCode) | Add-Content -Path $LogFile -Encoding utf8
 
 Write-Host ""
