@@ -262,6 +262,35 @@ function Stage-Package {
         Add-EmbedPython -EmbedZip $EmbedZip -AppDest $appDest
     }
 
+    # Top-level launcher — delegates to the real launcher inside bashi-privacy-app
+    # so non-tech users see one obvious entry point at the extracted root instead
+    # of having to dig through 20+ files in bashi-privacy-app/.
+    $topLauncherPath = Join-Path $StageRoot "Start_启动.bat"
+    $launcherContent = @"
+@echo off
+cd /d "%~dp0bashi-privacy-app"
+call run_portable.bat %*
+exit /b %ERRORLEVEL%
+"@
+    # .bat files MUST be ASCII (no BOM) — cmd.exe parses EF BB BF as a stray command.
+    Set-Content -LiteralPath $topLauncherPath -Value $launcherContent -Encoding ASCII
+
+    # Top-level 3-line bilingual quick-start
+    $readmePath = Join-Path $StageRoot "README_FIRST.md"
+    $readmeContent = @"
+# 巴适声工厂 隐私版 / Bashi Voice Factory Privacy Edition
+
+**双击 ``Start_启动.bat`` 即可开始使用。**
+**Double-click ``Start_启动.bat`` to start.**
+
+完整文档 / Full docs: ``bashi-privacy-app/README.md``
+"@
+    [System.IO.File]::WriteAllText(
+        $readmePath,
+        $readmeContent,
+        [System.Text.UTF8Encoding]::new($true)
+    )
+
     Remove-StagedDebris -Root $StageRoot
     Assert-LauncherCompatibility -AppDest $appDest
 }
