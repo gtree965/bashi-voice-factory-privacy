@@ -275,21 +275,30 @@ exit /b %ERRORLEVEL%
     # .bat files MUST be ASCII (no BOM) — cmd.exe parses EF BB BF as a stray command.
     Set-Content -LiteralPath $topLauncherPath -Value $launcherContent -Encoding ASCII
 
-    # Top-level 3-line bilingual quick-start
-    $readmePath = Join-Path $StageRoot "README_FIRST.md"
-    $readmeContent = @"
-# 巴适声工厂 隐私版 / Bashi Voice Factory Privacy Edition
+    # Top-level bilingual READMEs — source files live in bashi-privacy-app/release_docs/
+    # and are copied verbatim. Cross-link line at top of each: README.md says
+    # "**English** | [中文文档](README_CN.md)"; README_CN.md says
+    # "[English](README.md) | **中文文档**".
+    $releaseDocsDir = Join-Path $AppRoot "release_docs"
+    foreach ($name in @("README.md", "README_CN.md")) {
+        $src = Join-Path $releaseDocsDir $name
+        if (-not (Test-Path -LiteralPath $src)) {
+            throw "Missing top-level doc source: $src"
+        }
+        Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
+    }
 
-**双击 ``Start_启动.bat`` 即可开始使用。**
-**Double-click ``Start_启动.bat`` to start.**
-
-完整文档 / Full docs: ``bashi-privacy-app/README.md``
-"@
-    [System.IO.File]::WriteAllText(
-        $readmePath,
-        $readmeContent,
-        [System.Text.UTF8Encoding]::new($true)
-    )
+    # Optional bilingual PDF help file. Alex generates this locally (Word
+    # "Save as PDF", or Pandoc + Edge headless print-to-pdf) and drops it
+    # at the path below. Build succeeds with a warning if absent so this
+    # build script can iterate before the PDF is finalized.
+    $pdfName = "巴适声工厂使用手册_Bashi_Voice_Factory_User_Guide.pdf"
+    $pdfSrc = Join-Path $releaseDocsDir $pdfName
+    if (Test-Path -LiteralPath $pdfSrc) {
+        Copy-Item -LiteralPath $pdfSrc -Destination (Join-Path $StageRoot $pdfName) -Force
+    } else {
+        Write-Warning ("PDF user guide not found at {0} — top-level PDF will be missing from zip." -f $pdfSrc)
+    }
 
     Remove-StagedDebris -Root $StageRoot
     Assert-LauncherCompatibility -AppDest $appDest

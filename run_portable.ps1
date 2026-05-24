@@ -163,30 +163,39 @@ if ($dependencyCheckExit -ne 0) {
     Write-Host ""
     '[STEP] pip install -r requirements.txt' | Add-Content -Path $LogFile -Encoding utf8
 
-    $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
-        & $Python -m pip install -r requirements.txt --prefer-binary --no-warn-script-location --progress-bar on @pipArgs
+    $pipMaxAttempts = 3
+    $pipBackoffSeconds = @(5, 30, 120)
+    $pipInstallExit = -1
+    for ($attempt = 1; $attempt -le $pipMaxAttempts; $attempt++) {
+        if ($attempt -gt 1) {
+            $wait = $pipBackoffSeconds[$attempt - 2]
+            Write-Host ""
+            Write-Host ('[INFO] Network looked unstable. Retrying pip install in {0}s (attempt {1}/{2})...' -f $wait, $attempt, $pipMaxAttempts)
+            Write-Host ('[INFO] 网络似乎不稳。{0} 秒后重试 pip 安装（第 {1}/{2} 次）...' -f $wait, $attempt, $pipMaxAttempts)
+            Start-Sleep -Seconds $wait
+        }
+        $extraArgs = @()
+        if ($attempt -ge 2) { $extraArgs = @("--no-cache-dir") }
+        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
+            & $Python -m pip install -r requirements.txt --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
+        }
+        if ($pipInstallExit -eq 0) { break }
     }
+
     if ($pipInstallExit -ne 0) {
-        Write-Host '[WARN] First install attempt failed, retrying without cache...'
-        Write-Host "       首次安装失败，正在清除缓存重试..."
-        $pipRetryExit = Invoke-NativeCommandWithUtf8Log {
-            & $Python -m pip install -r requirements.txt --prefer-binary --no-cache-dir --no-warn-script-location --progress-bar on @pipArgs
-        }
-        if ($pipRetryExit -ne 0) {
-            Write-Host '[ERROR] Failed to install dependencies from requirements.txt.'
-            Write-Host "        依赖组件安装失败。"
-            Write-Host "Check launch_log.txt for details."
-            Write-Host "请查看 launch_log.txt 了解详情。"
-            Read-Host "Press Enter to exit / 按回车退出"
-            exit 1
-        }
+        Write-Host ""
+        Write-Host '[ERROR] pip install failed after retries. Please check your network and re-run the launcher.'
+        Write-Host '[ERROR] pip 安装多次失败。请检查网络连接后重新运行启动器。'
+        Write-Host ("Log: " + $LogFile)
+        Read-Host "Press Enter to exit / 按回车退出"
+        exit 1
     }
 }
 
 $ModelDownloadScript = Join-Path $AppRoot "download_gguf_model.py"
 if (Test-Path $ModelDownloadScript) {
     '[STEP] Checking GGUF runtime model pack' | Add-Content -Path $LogFile -Encoding utf8
-    $modelCheckExit = Invoke-NativeCommand { & $Python $ModelDownloadScript --check-only *>> $LogFile }
+    $modelCheckExit = Invoke-NativeCommandWithUtf8Log { & $Python $ModelDownloadScript --check-only }
     if ($modelCheckExit -ne 0) {
         Write-Host ""
         Write-Host '[WARN] GGUF runtime model pack is missing or incomplete.'
@@ -202,14 +211,29 @@ if (Test-Path $ModelDownloadScript) {
             Write-Host '[INFO] Downloading GGUF runtime model pack...'
             Write-Host '[INFO] 正在下载 GGUF 运行模型包...'
             '[STEP] download_gguf_model.py' | Add-Content -Path $LogFile -Encoding utf8
-            $modelDownloadExit = Invoke-NativeCommand { & $Python $ModelDownloadScript *>> $LogFile }
+
+            $ggufMaxAttempts = 3
+            $ggufBackoffSeconds = @(5, 30, 120)
+            $modelDownloadExit = -1
+            for ($attempt = 1; $attempt -le $ggufMaxAttempts; $attempt++) {
+                if ($attempt -gt 1) {
+                    $wait = $ggufBackoffSeconds[$attempt - 2]
+                    Write-Host ""
+                    Write-Host ('[INFO] GGUF download interrupted. Resuming in {0}s (attempt {1}/{2}); already-downloaded bytes are reused.' -f $wait, $attempt, $ggufMaxAttempts)
+                    Write-Host ('[INFO] GGUF 下载中断。{0} 秒后续传（第 {1}/{2} 次）；已下载部分会自动复用。' -f $wait, $attempt, $ggufMaxAttempts)
+                    Start-Sleep -Seconds $wait
+                }
+                $modelDownloadExit = Invoke-NativeCommandWithUtf8Log { & $Python $ModelDownloadScript }
+                if ($modelDownloadExit -eq 0) { break }
+            }
+
             if ($modelDownloadExit -ne 0) {
-                Write-Host '[WARN] GGUF model download did not complete.'
-                Write-Host "       GGUF 模型下载未完成。"
-                Write-Host "       The app will continue to start; you can retry later."
-                Write-Host "       程序将继续启动；你可以稍后重试下载。"
-                Write-Host "       See launch_log.txt for details."
-                Write-Host "       详情请查看 launch_log.txt。"
+                Write-Host ""
+                Write-Host '[WARN] GGUF model download did not complete after retries.'
+                Write-Host "       GGUF 模型多次重试后仍未下载完成。"
+                Write-Host "       The app will continue to start; you can retry later from the launcher."
+                Write-Host "       程序将继续启动；可稍后再次运行启动器自动续传。"
+                Write-Host ("       Log: " + $LogFile)
             }
             else {
                 Write-Host '[OK] GGUF runtime model pack is ready.'

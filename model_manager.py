@@ -1,16 +1,10 @@
 import hashlib
-import os
 import time
-import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Generator, Optional
 
 
-DEFAULT_STT_MODELSCOPE_REPO = os.environ.get(
-    "BASHI_STT_MODELSCOPE_REPO",
-    "gtree592/bashi-stt-models",
-)
 IDLE_TIMEOUT_SECONDS = 30.0
 PROGRESS_INTERVAL_SECONDS = 0.5
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
@@ -26,13 +20,11 @@ MODEL_REGISTRY = {
         "languages": ["zh", "en", "ja", "ko", "yue"],
         "files": {
             "model.int8.onnx": {
-                "modelscope_path": "sensevoice-small-int8/model.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
                 "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
             },
             "tokens.txt": {
-                "modelscope_path": "sensevoice-small-int8/tokens.txt",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
                 "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
@@ -50,25 +42,21 @@ MODEL_REGISTRY = {
         "languages": ["en"],
         "files": {
             "encoder.int8.onnx": {
-                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/encoder.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/encoder.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/encoder.int8.onnx",
                 "sha256": "a32b12d17bbbc309d0686fbbcc2987b5e9b8333a7da83fa6b089f0a2acd651ab",
             },
             "decoder.int8.onnx": {
-                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/decoder.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/decoder.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/decoder.int8.onnx",
                 "sha256": "b6bb64963457237b900e496ee9994b59294526439fbcc1fecf705b31a15c6b4e",
             },
             "joiner.int8.onnx": {
-                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/joiner.int8.onnx",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/joiner.int8.onnx",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/joiner.int8.onnx",
                 "sha256": "7946164367946e7f9f29a122407c3252b680dbae9a51343eb2488d057c3c43d2",
             },
             "tokens.txt": {
-                "modelscope_path": "parakeet-tdt-0.6b-v2-int8/tokens.txt",
                 "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/tokens.txt",
                 "mirror": "https://hf-mirror.com/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/tokens.txt",
                 "sha256": "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
@@ -83,7 +71,6 @@ MODEL_REGISTRY = {
 # VAD model (shared across engines)
 VAD_MODEL = {
     "silero_vad.onnx": {
-        "modelscope_path": "silero_vad.onnx",
         "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
         "size_mb": 2,
         "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
@@ -91,16 +78,8 @@ VAD_MODEL = {
 }
 
 
-def _modelscope_resolve_url(repo_id: str, path: str, revision: str = "master") -> str:
-    encoded_repo = "/".join(urllib.parse.quote(part) for part in repo_id.strip("/").split("/"))
-    encoded_path = "/".join(urllib.parse.quote(part) for part in path.replace("\\", "/").split("/"))
-    return f"https://modelscope.cn/models/{encoded_repo}/resolve/{revision}/{encoded_path}"
-
-
 def _build_url_order(file_meta: dict, use_mirror: bool = True) -> list:
     urls = []
-    if file_meta.get("modelscope_path") and DEFAULT_STT_MODELSCOPE_REPO:
-        urls.append(_modelscope_resolve_url(DEFAULT_STT_MODELSCOPE_REPO, file_meta["modelscope_path"]))
     if use_mirror and file_meta.get("mirror"):
         urls.append(file_meta["mirror"])
     if file_meta.get("url"):
