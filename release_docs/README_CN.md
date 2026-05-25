@@ -85,14 +85,19 @@
 
 ## 💻 硬件要求
 
-| 硬件等级 | 后端 | "你好。" 探测延迟 | 长文合成 |
-|---|---|---|---|
-| NVIDIA RTX 30/40 系 | PyTorch + CUDA | <2 秒 | 5-20× 实时 |
-| AMD RX 590 / 9060 XT、Intel Arc | GGUF + Vulkan | 3-5 秒 | 1-3× 实时 |
-| Intel 集成显卡（UHD、Iris Xe） | GGUF + Vulkan | 7-12 秒 | 约实时 |
-| Intel N100 / N305（纯 CPU） | GGUF + CPU | 15-30 秒 | 0.3-0.5× 实时 |
+下表是**作者实测**的数据。首次运行后点右侧面板的"测速"按钮，程序会根据你这台机器实际表现重新校准 ETA 估算 — 不用照搬此表。
 
-首次运行时点 "测速" 按钮，让 ETA 估算贴合你这台机器实际表现。
+| 硬件 | 自动选择的后端 | "你好。" 探测（25 字） | 1,000 字合成预计 | 状态 |
+|---|---|---|---|---|
+| AMD RX 9060 XT (16 GB) | GGUF + Vulkan | 约 3 秒 | 几分钟 | ✓ 2026-05 实测 |
+| AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 秒 | 约 5-10 分钟 | ✓ 实测 |
+| Intel N305 笔记本 + UHD 集显 | GGUF + Vulkan / DirectML | 53 秒 | 25-46 分钟 | ✓ 2026-05-25 实测 |
+| Intel N100 迷你主机 + UHD 集显 | GGUF + Vulkan / DirectML | 126 秒 | 58 分钟 - 1 小时 49 分 | ✓ 2026-05-25 实测 |
+| NVIDIA RTX / Apple Silicon / Intel Arc | — | 暂未实测 | 暂未实测 | v0.1 未验证 |
+
+> ⚠️ **入门级 CPU（Intel N100 / N305 一类）仅适合短句试用 — 单次生成建议不超过 200 字。** 这类机器跑 5,000 字长文需要 2-9 小时。如果想做长文音频（讲座、有声书），请用独立显卡硬件（AMD RX 500/600/9000 系、NVIDIA RTX 类）。
+
+> ℹ️ Windows 上的 NVIDIA 用户也可以走 GGUF + Vulkan 路线（NVIDIA 驱动支持 Vulkan）。PyTorch + CUDA 路线在 v0.1 需要手动配置权重，不会自动启用。
 
 ---
 

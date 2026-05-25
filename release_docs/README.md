@@ -85,14 +85,19 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 
 ## 💻 Hardware Expectations
 
-| Hardware class | Backend | "你好。" probe latency | Long-form synthesis |
-|---|---|---|---|
-| NVIDIA RTX 30/40 series | PyTorch + CUDA | <2 s | 5-20x realtime |
-| AMD RX 590 / 9060 XT, Intel Arc | GGUF + Vulkan | 3-5 s | 1-3x realtime |
-| Intel iGPU (UHD, Iris Xe) | GGUF + Vulkan | 7-12 s | ~realtime |
-| Intel N100 / N305 (CPU only) | GGUF + CPU | 15-30 s | 0.3-0.5x realtime |
+The table below shows **actually measured** numbers from author hardware. The built-in speed test (click 测速 / Speed Test on the right-hand panel) calibrates the ETA panel to your specific machine on first use, so you don't have to extrapolate from this table.
 
-A built-in speed test (click 测速 / Speed Test) calibrates the ETA panel to your specific box on first use.
+| Hardware | Auto-selected backend | "你好。" probe (25 chars) | 1,000-char synthesis ETA | Status |
+|---|---|---|---|---|
+| AMD RX 9060 XT (16 GB) | GGUF + Vulkan | ~3 s | a few minutes | ✓ Tested 2026-05 |
+| AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 s | ~5-10 min | ✓ Tested |
+| Intel N305 laptop + UHD iGPU | GGUF + Vulkan / DirectML | 53 s | 25-46 min | ✓ Tested 2026-05-25 |
+| Intel N100 mini-PC + UHD iGPU | GGUF + Vulkan / DirectML | 126 s | 58 min - 1h49 min | ✓ Tested 2026-05-25 |
+| NVIDIA RTX / Apple Silicon / Intel Arc | — | not yet measured | not yet measured | not validated in v0.1 |
+
+> ⚠️ **Entry-level CPUs (Intel N100 / N305 class) are only practical for short text — under ~200 characters per generation.** A 5,000-character essay would take 2-9 hours on these boxes. For long-form audio (lectures, audiobooks), please use discrete-GPU hardware (AMD RX 500/600/9000 series, NVIDIA RTX class).
+
+> ℹ️ NVIDIA users on Windows can also use the GGUF + Vulkan path (NVIDIA cards support Vulkan via the proprietary driver). The PyTorch + CUDA path in v0.1 requires manual weight setup; it is not auto-configured.
 
 ---
 

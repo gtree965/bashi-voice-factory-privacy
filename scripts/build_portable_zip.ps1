@@ -292,7 +292,7 @@ exit /b %ERRORLEVEL%
     # "Save as PDF", or Pandoc + Edge headless print-to-pdf) and drops it
     # at the path below. Build succeeds with a warning if absent so this
     # build script can iterate before the PDF is finalized.
-    $pdfName = "巴适声工厂使用手册_Bashi_Voice_Factory_User_Guide.pdf"
+    $pdfName = "巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf"
     $pdfSrc = Join-Path $releaseDocsDir $pdfName
     if (Test-Path -LiteralPath $pdfSrc) {
         Copy-Item -LiteralPath $pdfSrc -Destination (Join-Path $StageRoot $pdfName) -Force
