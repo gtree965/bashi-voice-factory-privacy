@@ -2,8 +2,8 @@
 
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](bashi-privacy-app/LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](bashi-privacy-app/VERSION)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
@@ -14,7 +14,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 > ⚡ Need cloud-quality voices and faster generation? Check out [Bashi Voice Factory Turbo (巴适声工厂 · 极速版)](https://github.com/gtree965/bashi-voice-factory-turbo) — Microsoft Edge TTS, 14 languages, 50,000-character long text. Requires internet.
 
 **Author:** Alex Li (ncorecpu@gmail.com)
-**License:** [MIT License](bashi-privacy-app/LICENSE)
+**License:** [MIT License](LICENSE)
 
 ---
 
@@ -122,10 +122,13 @@ bashi-voice-factory-privacy-v0.1.0/
 ├── Start_启动.bat                                       ← double-click here
 ├── README.md                                            ← this file
 ├── README_CN.md                                         ← Chinese version
-├── 巴适声工厂使用手册_Bashi_Voice_Factory_User_Guide.pdf  ← help PDF (bilingual)
+├── LICENSE                                              ← MIT license
+├── VERSION                                              ← release version
+├── 巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf
+│                                                         ← help PDF (bilingual)
 ├── bashi-privacy-app/                                   ← app code + embedded Python
 │   ├── run_portable.bat                                 ← same launcher, direct path
-│   ├── README.md                                        ← developer / technical README
+│   ├── README.md                                        ← project README copy
 │   └── ...
 └── vulkan_backend_spike/                                ← GGUF runtime (populated on first launch)
     └── Qwen3-TTS-GGUF/
@@ -135,7 +138,7 @@ bashi-voice-factory-privacy-v0.1.0/
 
 ## 📄 License
 
-[MIT License](bashi-privacy-app/LICENSE) © 2026 Alex Li
+[MIT License](LICENSE) © 2026 Alex Li
 
 Bundled third-party components retain their original licenses:
 

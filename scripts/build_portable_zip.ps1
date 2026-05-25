@@ -287,6 +287,13 @@ exit /b %ERRORLEVEL%
         }
         Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
     }
+    foreach ($name in @("LICENSE", "VERSION")) {
+        $src = Join-Path $AppRoot $name
+        if (-not (Test-Path -LiteralPath $src)) {
+            throw "Missing top-level metadata source: $src"
+        }
+        Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
+    }
 
     # Optional bilingual PDF help file. Alex generates this locally (Word
     # "Save as PDF", or Pandoc + Edge headless print-to-pdf) and drops it
