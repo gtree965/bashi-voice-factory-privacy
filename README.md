@@ -15,6 +15,8 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 **Author:** Alex Li (ncorecpu@gmail.com)
 **License:** [MIT License](LICENSE)
+**Source code:** <https://github.com/gtree965/bashi-voice-factory-privacy>
+**Download:** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [files.fm mirror](https://files.fm/u/juvstxmrez)
 
 ---
 
@@ -69,7 +71,7 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 
 ## 🌐 Network Behavior
 
-**Privacy commitment**: this app does not phone home, does not upload audio, does not collect telemetry.
+**Privacy commitment**: this app does not phone home, does not upload audio, does not collect telemetry. **The app never automatically checks any internet resource.** Every network operation is documented below and requires explicit user action — no background polling, no analytics, no silent update probes.
 
 **First launch only** (one-time, ~700 MB + ~2.2 GB):
 
@@ -79,7 +81,12 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 
 **Runtime network activity**: zero. TTS synthesis, STT transcription, and audio export are 100% on-device.
 
-**Optional, user-initiated only**: the UI footer "Check for updates" button opens a files.fm release page in a new tab. No automatic version polling; no background HTTP traffic.
+**Manual update check** (user-initiated only, never automatic): the UI footer "Check for updates" button opens a release page in a new browser tab. You can also check manually anytime at:
+
+- GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
+- files.fm mirror: <https://files.fm/u/juvstxmrez>
+
+**Air-gapped / sensitive deployment** (banks, healthcare, government, internal corporate networks): after first-launch downloads complete on a connected machine, the entire `bashi-voice-factory-privacy-v0.x.0/` extracted folder can be copied to an offline / physically-isolated machine and run with zero further network access required. The app has no telemetry endpoints to firewall, no auto-update worker, no callback URLs. To verify, monitor outbound traffic with Wireshark / Resource Monitor during a normal session — it should be silent.
 
 ---
 
@@ -99,13 +106,36 @@ The table below shows **actually measured** numbers from author hardware. The bu
 
 > ℹ️ NVIDIA users on Windows can also use the GGUF + Vulkan path (NVIDIA cards support Vulkan via the proprietary driver). The PyTorch + CUDA path in v0.1 requires manual weight setup; it is not auto-configured.
 
+### 🧩 Hardware Coverage Matrix
+
+Beyond the specific machines benchmarked above, here is how the auto-selected acceleration path maps across mainstream Windows hardware:
+
+| Hardware class | Acceleration path used | Status |
+|---|---|---|
+| NVIDIA RTX 30 / 40 / 50 | GGUF + Vulkan + DirectML | ⚠️ Works, but **suboptimal** — no CUDA path in v0.1 |
+| NVIDIA GTX 10 / 16 | GGUF + Vulkan + DirectML | ⚠️ Same as above |
+| AMD RX 500 / 600 / 7000 / 9000 (discrete) | GGUF + Vulkan + DirectML | ✅ Tested (RX 590, RX 9060 XT) |
+| Intel Arc A-series (A380 / A580 / A750 / A770) | GGUF + Vulkan + DirectML | ✅ Should work — not yet measured |
+| Intel iGPU (UHD / Iris Xe / Arc iGPU) | GGUF + Vulkan + DirectML | ✅ Tested (Intel N305 UHD) |
+| AMD APU iGPU (Vega 7/8, RDNA 2/3) | GGUF + Vulkan + DirectML | ✅ Should work — not yet measured |
+| CPU only (no usable GPU / no driver) | GGUF + CPU (ggml-cpu auto-SIMD) | ✅ Works; auto-selected only when no GPU detected |
+| NPU (Snapdragon X / Lunar Lake / Ryzen AI 300) | — | ❌ Not yet utilized |
+| ARM64 Windows (Snapdragon X Copilot+ PC) | — | ❌ Not supported (runs via slow x64 emulation) |
+
+### ⚙️ Known Limitations (roadmap)
+
+- **NVIDIA discrete GPU users currently run via Vulkan, not CUDA.** A 4090 takes the same path as an N100 iGPU. A dedicated NVIDIA + CUDA build is on the v0.2 roadmap.
+- **Weak iGPU may be slower than pure CPU.** On Intel N100-class hardware, DirectML / Vulkan transfer + scheduling overhead can outweigh GPU benefit. A/B test by launching from a cmd window after `set GGUF_LLM_USE_GPU=0 && set GGUF_ONNX_PROVIDER=CPU` — feedback on real speed numbers welcome.
+- **NPU acceleration is not yet used** (Snapdragon X Elite, Intel Lunar Lake AI Boost, AMD Ryzen AI 300). Under investigation for v0.2+.
+- **ARM64 Windows is not natively supported** (Surface Pro 11, Galaxy Book4 Edge, etc.). x64 emulation works but is slow. Native ARM64 build is a v0.3+ candidate.
+
 ---
 
 ## 🐛 Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from files.fm; the BOM bug was fixed in v0.1.0 final |
+| `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from GitHub Releases or the files.fm mirror; the BOM bug was fixed in v0.1.0 final |
 | pip install stops mid-way after WiFi blip | Retry triggers automatically (3 attempts, 5s/30s/120s backoff). If all 3 fail, fix network and re-run the launcher — pip caches what's already installed |
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
 | App exits with "No usable backend was found" | Check `launch_log.txt` — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |

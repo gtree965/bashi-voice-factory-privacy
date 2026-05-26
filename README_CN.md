@@ -15,6 +15,8 @@
 
 **作者：** Alex Li (ncorecpu@gmail.com)
 **许可：** [MIT License](LICENSE)
+**源码：** <https://github.com/gtree965/bashi-voice-factory-privacy>
+**下载：** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [files.fm 镜像](https://files.fm/u/juvstxmrez)
 
 ---
 
@@ -69,7 +71,7 @@
 
 ## 🌐 网络行为说明
 
-**隐私承诺**：本程序不主动联网、不上传音频、不收集使用数据。
+**隐私承诺**：本程序不主动联网、不上传音频、不收集使用数据。**程序永远不会自动检查任何在线资源。** 所有联网行为均在下文有完整说明，且需要用户主动触发 — 无后台轮询、无统计分析、无静默更新探测。
 
 **仅首次启动**（一次性，约 700 MB + 约 2.2 GB）：
 
@@ -79,7 +81,12 @@
 
 **运行时网络行为**：零。文字转语音、音视频转文字、音频导出全部本机完成。
 
-**唯一可选联网**：UI 右下角"查看最新版本"按钮，由你主动点击时打开 files.fm 发布页。程序不自动检查更新，不在后台联网。
+**手动更新检查**（仅用户主动触发，永不自动）：UI 右下角"查看最新版本"按钮在新浏览器标签页打开发布页。也可以随时手动访问：
+
+- GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
+- files.fm 镜像: <https://files.fm/u/juvstxmrez>
+
+**离网 / 敏感场景部署**（银行、医疗、政务、企业内网）：在联网机器上完成首次启动的所有下载后，整个 `bashi-voice-factory-privacy-v0.x.0/` 解压文件夹可以原样拷贝到离网/物理隔离机器上运行，之后所有功能均无需任何网络访问。程序没有任何遥测端点需要防火墙拦截，没有自动更新守护进程，也没有回调 URL。可用 Wireshark / 资源监视器在正常使用过程中监测出站流量验证 — 应当全程静默。
 
 ---
 
@@ -99,13 +106,36 @@
 
 > ℹ️ Windows 上的 NVIDIA 用户也可以走 GGUF + Vulkan 路线（NVIDIA 驱动支持 Vulkan）。PyTorch + CUDA 路线在 v0.1 需要手动配置权重，不会自动启用。
 
+### 🧩 硬件兼容性矩阵
+
+除了上表里具体测过的几台机器，下表说明主流 Windows 硬件在自动后端选择下走的加速路径：
+
+| 硬件类别 | 实际加速路径 | 状态 |
+|---|---|---|
+| NVIDIA RTX 30 / 40 / 50 | GGUF + Vulkan + DirectML | ⚠️ 能跑但**次优** — v0.1 未走 CUDA |
+| NVIDIA GTX 10 / 16 | GGUF + Vulkan + DirectML | ⚠️ 同上 |
+| AMD RX 500 / 600 / 7000 / 9000（独立显卡） | GGUF + Vulkan + DirectML | ✅ 实测（RX 590、RX 9060 XT） |
+| Intel Arc A 系列（A380 / A580 / A750 / A770） | GGUF + Vulkan + DirectML | ✅ 理论可用、未实测 |
+| Intel 集显（UHD / Iris Xe / Arc iGPU） | GGUF + Vulkan + DirectML | ✅ 实测（Intel N305 UHD） |
+| AMD APU 集显（Vega 7/8、RDNA 2/3） | GGUF + Vulkan + DirectML | ✅ 理论可用、未实测 |
+| 纯 CPU（无可用 GPU / 无驱动） | GGUF + CPU（ggml-cpu 自动 SIMD） | ✅ 可用；仅在无 GPU 时自动选择 |
+| NPU（Snapdragon X / Lunar Lake / Ryzen AI 300） | — | ❌ 暂未利用 |
+| ARM64 Windows（Snapdragon X Copilot+ PC） | — | ❌ 暂不支持（走 x64 仿真较慢） |
+
+### ⚙️ 已知限制（路线图）
+
+- **NVIDIA 独显用户当前走 Vulkan、未走 CUDA。** RTX 4090 跟 N100 集显走同一条路。独立的 NVIDIA + CUDA 构建在 v0.2 路线图。
+- **弱集显可能比纯 CPU 还慢。** Intel N100 类硬件上，DirectML / Vulkan 的数据传输与调度开销可能盖过 GPU 收益。可在 cmd 窗口里 `set GGUF_LLM_USE_GPU=0 && set GGUF_ONNX_PROVIDER=CPU` 后再启动来 A/B 测试，欢迎反馈实测数字。
+- **NPU 加速尚未利用**（Snapdragon X Elite、Intel Lunar Lake AI Boost、AMD Ryzen AI 300）。v0.2+ 调研中。
+- **ARM64 Windows 暂未原生支持**（Surface Pro 11、Galaxy Book4 Edge 等）。x64 仿真能跑但速度受限。原生 ARM64 构建是 v0.3+ 候选。
+
 ---
 
 ## 🐛 常见问题排查
 
 | 现象 | 可能原因 / 处理 |
 |---|---|
-| 双击 `Start_启动.bat` 报 "Array index expression is missing" | 旧版 zip。请从 files.fm 重新下载最新版；该 BOM 问题在 v0.1.0 正式版已修复 |
+| 双击 `Start_启动.bat` 报 "Array index expression is missing" | 旧版 zip。请从 GitHub Releases 或 files.fm 镜像重新下载最新版；该 BOM 问题在 v0.1.0 正式版已修复 |
 | pip 安装途中 WiFi 闪断后中止 | 自动重试 3 次（5/30/120 秒退避）。3 次都失败时，修好网络后重新运行启动器即可（pip 会跳过已装好的包） |
 | GGUF 下载中断 | 同样自动重试，且支持 HTTP Range 续传，重新运行启动器从 `.part` 文件续传 |
 | 启动报 "No usable backend was found" | 查 `launch_log.txt`。常见原因：GGUF 运行 DLL 缺失、显卡驱动过旧、可用内存 <8 GB。程序会打印中英双语提示告知具体原因 |
