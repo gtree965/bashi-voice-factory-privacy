@@ -275,6 +275,24 @@ exit /b %ERRORLEVEL%
     # .bat files MUST be ASCII (no BOM) — cmd.exe parses EF BB BF as a stray command.
     Set-Content -LiteralPath $topLauncherPath -Value $launcherContent -Encoding ASCII
 
+    # Optional CPU-only launcher — for users on weak iGPU (e.g., Intel N100/N305)
+    # who want to A/B test whether pure CPU is faster than DirectML/Vulkan iGPU
+    # without setting env vars by hand. Sets GGUF_LLM_USE_GPU=0 +
+    # GGUF_ONNX_PROVIDER=CPU before delegating to the standard launcher.
+    $cpuLauncherPath = Join-Path $StageRoot "Start_CPU_only_仅CPU启动.bat"
+    $cpuLauncherContent = @"
+@echo off
+REM Force GGUF LLM to use CPU (skip Vulkan); force ONNX decoder to use CPU (skip DirectML).
+REM Useful on entry-level iGPU where GPU overhead may outweigh benefit.
+REM Edit/delete this file if not needed.
+set "GGUF_LLM_USE_GPU=0"
+set "GGUF_ONNX_PROVIDER=CPU"
+cd /d "%~dp0bashi-privacy-app"
+call run_portable.bat %*
+exit /b %ERRORLEVEL%
+"@
+    Set-Content -LiteralPath $cpuLauncherPath -Value $cpuLauncherContent -Encoding ASCII
+
     # Top-level bilingual READMEs — source files live in bashi-privacy-app/release_docs/
     # and are copied verbatim. Cross-link line at top of each: README.md says
     # "**English** | [中文文档](README_CN.md)"; README_CN.md says

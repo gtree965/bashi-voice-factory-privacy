@@ -19,7 +19,8 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
 
 - **2026-05-26**: v0.1.1 / v0.2 / v0.3 refined after technical review:
   - ✅ Confirmed: `llama.cpp` auto-selects CUDA over Vulkan via lexicographic DLL load order in `ggml_backend_load_all()` — `ggml-cuda.dll` < `ggml-vulkan.dll` alphabetically → CUDA registered at lower index → scheduler prefers it. No env var or wrapper override needed.
-  - ✅ Confirmed: `llama.cpp` does **not** use cuDNN. Minimum CUDA DLL set is `ggml-cuda.dll` + `cudart64_12.dll` + `cublas64_12.dll` + `cublasLt64_12.dll` ≈ 150-200 MB. cuDNN entirely omitted → 100-500 MB saved.
+  - ✅ Confirmed: `llama.cpp` does **not** use cuDNN. Minimum CUDA DLL set is `ggml-cuda.dll` + `cudart64_12.dll` + `cublas64_12.dll` + `cublasLt64_12.dll`; cuDNN entirely omitted.
+  - ⚠️ Measured (2026-05-26): official `b7798` CUDA DLLs are much larger than the early estimate. The four required CUDA DLLs add ~567.5 MiB compressed inside the final zip; a single universal CUDA+Vulkan probe package measured 704,261,799 bytes / 671.64 MiB. Distribution shape must be decided before shipping v0.1.1.
   - ⚠️ Caught: v0.1.1 cannot be "pure distribution-side" — current UI / `/api/system-info` / `backend_probe.py` label every GGUF path as "Vulkan + DirectML" even on NVIDIA, and would not surface that CUDA is actually active. Minimal Python-layer changes required (backend reporting only).
   - ⚠️ Caught: bin folder currently contains `llama.dll` + `ggml.dll` + `ggml-base.dll` + `ggml-vulkan.dll` + many CPU variants. Bundling CUDA needs explicit verification of whether `ggml-cuda.dll` plugs into the existing `llama.dll` / `ggml.dll` (plugin model), or whether the CUDA llama.cpp build's versions of those files must coexist / replace.
   - ✅ Confirmed: upstream `llama.cpp` macOS-arm64 releases ship pre-built `libllama.dylib` + `libggml-metal.dylib` with Metal compiled in by default. v0.2 Phase 0a outcome 1 locked → no local-compile or PyTorch+MPS pivot needed.
@@ -55,9 +56,9 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
 
 ## v0.1.1 — NVIDIA CUDA dual-backend (Windows patch)
 
-**Goal**: NVIDIA discrete GPU users on Windows get native CUDA acceleration automatically — same single zip, no separate variant, no manual setup.
+**Goal**: NVIDIA discrete GPU users on Windows get native CUDA acceleration with minimal setup. Original "same single zip" goal is under review after the 2026-05-26 size probe showed a universal CUDA+Vulkan zip would be ~672 MiB.
 
-**Why now**: Upstream HaujetZhao/Qwen3-TTS-GGUF uses llama.cpp, which ships CUDA-flavored binaries for every release. v0.1 chose Vulkan-only as a single-binary universal solution; v0.1.1 closes the obvious gap for NVIDIA users without splitting the distribution.
+**Why now**: Upstream HaujetZhao/Qwen3-TTS-GGUF uses llama.cpp, which ships CUDA-flavored binaries for every release. v0.1 chose Vulkan-only as a universal solution; v0.1.1 closes the obvious gap for NVIDIA users. Distribution may become either a separate NVIDIA zip or an optional CUDA add-on pack if the single-zip size is unacceptable.
 
 ### Approach
 
@@ -83,7 +84,10 @@ Bundle the **CUDA llama.cpp build matching the same `b<NNNN>` version** alongsid
    - NVIDIA + current CUDA driver: chip says `GGUF + CUDA`, token/sec ≥ 1.5× the Vulkan-only number on the same card
    - AMD / Intel / NVIDIA with outdated driver: chip says `GGUF + Vulkan`, no regression
    - All: app boots, no startup crash, decoder output identical
-7. **Measure size impact**. Document new zip size in release notes. Target: stay under 500 MB. Per the 150-200 MB estimate, new total ≈ 250-310 MB — comfortably under.
+7. **Measure size impact / choose distribution shape**. The size probe already measured the single universal CUDA+Vulkan zip at 704,261,799 bytes / 671.64 MiB. Removing unused llama CLI tools and the archived Vulkan source zip saves only ~66.8 MiB compressed, so the single-zip package still lands around ~605 MiB. Decide before release:
+   - Option A: accept the larger universal zip and document the size bump.
+   - Option B: ship separate `windows-vulkan` and `windows-nvidia-cuda` zips.
+   - Option C: keep the main zip Vulkan-only and add a user-triggered CUDA add-on downloader.
 8. **README update**:
    - Hardware Coverage Matrix: NVIDIA rows change from ⚠️ to ✓ Tested (after NVIDIA verification)
    - Network Behavior: no change (no new download)
@@ -97,7 +101,7 @@ Bundle the **CUDA llama.cpp build matching the same `b<NNNN>` version** alongsid
 - New zip extracts + boots on NVIDIA + AMD machines without regression
 - On NVIDIA discrete GPU: UI chip displays `GGUF + CUDA`; measured token/sec ≥ 1.5× the same card's previous Vulkan number
 - On AMD RX 590 / RX 9060 XT / Intel N100 / N305: UI chip displays `GGUF + Vulkan` (or `+ DirectML`); no regression vs v0.1
-- Zip size ≤ 500 MB
+- Distribution shape decided explicitly (universal large zip vs separate NVIDIA zip vs optional CUDA add-on), with measured size documented in release notes
 - README hardware table reflects measured CUDA numbers
 
 ### Risks (updated after review)
@@ -106,7 +110,8 @@ Bundle the **CUDA llama.cpp build matching the same `b<NNNN>` version** alongsid
 - **DLL coexistence may not be plug-and-play** (Finding 2 — until Step 2 confirms otherwise): if the CUDA build's `llama.dll` / `ggml.dll` aren't binary-compatible with the Vulkan ones, "single zip dual backend" may need a tiny dispatcher (e.g., launcher copies the right `llama.dll` into bin before app start based on detected NVIDIA presence). Falls back to v0.2 "separate NVIDIA zip" approach if dispatcher gets complicated.
 - **NVIDIA driver compatibility**: CUDA 12.4 needs driver ≥ 550.x. Older NVIDIA drivers won't get CUDA — Vulkan fallback handles it transparently (verified).
 - ~~**Backend auto-selection priority**~~ — **resolved** by source review: `llama.cpp` registers backends in lexicographic DLL discovery order; CUDA naturally takes precedence over Vulkan on NVIDIA hardware without any wrapper override.
-- ~~**cuDNN size**~~ — **resolved**: cuDNN not used by llama.cpp, omitted entirely.
+- **CUDA package size is larger than expected** (size probe, 2026-05-26): required CUDA DLLs alone contribute ~567.5 MiB compressed to the final package. This likely invalidates the original "single zip under 500 MB" target unless Alex explicitly accepts a larger download.
+- ~~**cuDNN size**~~ — **resolved**: cuDNN not used by llama.cpp, omitted entirely; however cuBLASLt + ggml-cuda are still large.
 
 ### Effort estimate
 

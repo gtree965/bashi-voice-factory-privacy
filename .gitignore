@@ -49,6 +49,11 @@ desktop.ini
 *.odt
 .~lock.*#
 
+# Internal evaluation / review artifacts (kept local only)
+总结报告_*.html
+*_Comprehensive_Evaluation_Report.html
+roadmap_review_report_by_*.md
+
 # Tests stay local-only until fixtures are ready for public CI.
 tests/
 

@@ -392,6 +392,48 @@ def detect_hardware_profile() -> HardwareProfile:
     )
 
 
+def detect_gguf_accelerator(
+    hardware: HardwareProfile | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Determine which ggml backend the GGUF runtime will actually pick.
+
+    Returns one of: "cuda", "vulkan", "cpu", "unknown".
+
+    Heuristic based on (a) which `ggml-*.dll` files are present in the bundled
+    GGUF runtime bin/ directory and (b) hardware vendor + driver availability.
+    Accurate for v0.1.x because llama.cpp's `ggml_backend_load_all()` discovers
+    DLLs in lexicographic order and the scheduler prefers them in registration
+    order: `ggml-cuda.dll` (if NVIDIA + CUDA driver available) registers first
+    and wins, otherwise `ggml-vulkan.dll`, otherwise CPU.
+
+    User can force CPU via `GGUF_LLM_USE_GPU=0` env var (honored by
+    local_tts_engine_gguf.py at engine load time).
+    """
+    env = env or os.environ
+    if env.get("GGUF_LLM_USE_GPU") == "0":
+        return "cpu"
+
+    hardware = hardware or detect_hardware_profile()
+
+    gguf_bin = (
+        Path(__file__).resolve().parent.parent
+        / "vulkan_backend_spike"
+        / "Qwen3-TTS-GGUF"
+        / "qwen3_tts_gguf"
+        / "inference"
+        / "bin"
+    )
+    has_cuda_dll = (gguf_bin / "ggml-cuda.dll").exists()
+    has_vulkan_dll = (gguf_bin / "ggml-vulkan.dll").exists()
+
+    if has_cuda_dll and hardware.normalized_vendor == "nvidia" and hardware.has_cuda:
+        return "cuda"
+    if has_vulkan_dll and hardware.has_vulkan:
+        return "vulkan"
+    return "cpu"
+
+
 def dispatch_real_probe(backend: BackendName) -> ProbeOutcome:
     if backend == "gguf":
         return probe_gguf_backend()

@@ -12,6 +12,7 @@ from flask import Blueprint, Response, jsonify, request, send_from_directory, st
 
 from backend_probe import (
     MODEL_DEFAULT,
+    detect_gguf_accelerator,
     detect_hardware_profile,
     get_probe_cache_path,
     load_probe_cache,
@@ -205,35 +206,62 @@ def _system_info_payload() -> dict:
     device_identity = cache_key.get("gpu_device_identity") or "unknown"
     vendor = (cache_key.get("gpu_vendor") or "unknown").lower()
 
-    if device_identity == "unknown" or vendor == "unknown":
-        try:
-            hardware = detect_hardware_profile()
+    # Always resolve hardware once so we can pass it to detect_gguf_accelerator
+    # without re-running the PowerShell GPU probe inside it.
+    hardware = None
+    try:
+        hardware = detect_hardware_profile()
+        if device_identity == "unknown" or vendor == "unknown":
             device_identity = hardware.gpu_device_identity or device_identity
             vendor = hardware.normalized_vendor or vendor
-            has_cuda = hardware.has_cuda
-            has_mps = hardware.has_mps
-        except Exception:
-            has_cuda = False
-            has_mps = False
-    else:
+        has_cuda = hardware.has_cuda
+        has_mps = hardware.has_mps
+    except Exception:
         has_cuda = vendor == "nvidia"
         has_mps = vendor == "apple"
 
+    # Detect the actual ggml accelerator backend that the GGUF runtime will
+    # pick at model load. Required so the chip / detail labels reflect reality
+    # when v0.1.1 ships CUDA DLLs alongside Vulkan.
+    gguf_accelerator = detect_gguf_accelerator(hardware) if backend == "gguf" else None
+
     if backend == "gguf":
-        if vendor == "amd":
-            label_en = "AMD GPU acceleration"
-            label_zh = "AMD 显卡加速"
-        elif vendor == "intel":
-            label_en = "Intel GPU acceleration"
-            label_zh = "Intel 显卡加速"
+        if gguf_accelerator == "cuda":
+            label_en = "NVIDIA CUDA acceleration"
+            label_zh = "NVIDIA CUDA 加速"
+            detail_en = "GGUF + CUDA"
+            detail_zh = "GGUF + CUDA"
+            acceleration_type = "gguf_cuda"
+            chip_level = "ok"
+            is_cpu_mode = False
+        elif gguf_accelerator == "cpu":
+            label_en = "GGUF CPU mode (user-forced)"
+            label_zh = "GGUF CPU 模式（用户手动指定）"
+            detail_en = "GGUF + CPU (GGUF_LLM_USE_GPU=0)"
+            detail_zh = "GGUF + CPU（已设 GGUF_LLM_USE_GPU=0）"
+            acceleration_type = "gguf_cpu"
+            chip_level = "warning"
+            is_cpu_mode = True
         else:
-            label_en = "GGUF GPU acceleration"
-            label_zh = "GGUF 显卡加速"
-        detail_en = "Vulkan + DirectML"
-        detail_zh = "Vulkan + DirectML"
-        acceleration_type = "vulkan_dml"
-        chip_level = "ok"
-        is_cpu_mode = False
+            # vulkan (or unknown — treat as vulkan-class since the GGUF backend
+            # is loaded with use_gpu=True by default)
+            if vendor == "amd":
+                label_en = "AMD GPU acceleration"
+                label_zh = "AMD 显卡加速"
+            elif vendor == "intel":
+                label_en = "Intel GPU acceleration"
+                label_zh = "Intel 显卡加速"
+            elif vendor == "nvidia":
+                label_en = "NVIDIA GPU acceleration (Vulkan fallback)"
+                label_zh = "NVIDIA 显卡加速（Vulkan 回退）"
+            else:
+                label_en = "GGUF GPU acceleration"
+                label_zh = "GGUF 显卡加速"
+            detail_en = "GGUF + Vulkan + DirectML"
+            detail_zh = "GGUF + Vulkan + DirectML"
+            acceleration_type = "gguf_vulkan_dml"
+            chip_level = "ok"
+            is_cpu_mode = False
     elif has_cuda:
         label_en = "NVIDIA CUDA acceleration"
         label_zh = "NVIDIA CUDA 加速"
@@ -263,6 +291,7 @@ def _system_info_payload() -> dict:
         "success": True,
         "app_version": VERSION,
         "backend": backend,
+        "gguf_accelerator": gguf_accelerator,
         "model_default": MODEL_DEFAULT,
         "gpu_device_identity": device_identity,
         "gpu_vendor": vendor,
