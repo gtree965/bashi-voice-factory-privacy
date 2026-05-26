@@ -17,6 +17,8 @@ const state = {
     customInstruct: '',
     currentPreviewAudio: null,
     systemInfo: null,
+    cudaUpgrade: null,
+    cudaUpgradeInProgress: false,
     benchmark: null,
     benchmarkInProgress: false,
     estimateTimer: null,
@@ -55,6 +57,12 @@ const elements = {
     firstRunBanner: document.getElementById('first-run-banner'),
     firstRunBenchmarkBtn: document.getElementById('first-run-benchmark-btn'),
     firstRunDismissBtn: document.getElementById('first-run-dismiss-btn'),
+    cudaUpgradeBanner: document.getElementById('cuda-upgrade-banner'),
+    cudaUpgradeText: document.getElementById('cuda-upgrade-text'),
+    cudaUpgradeBtn: document.getElementById('cuda-upgrade-btn'),
+    cudaUpgradeProgress: document.getElementById('cuda-upgrade-progress'),
+    cudaUpgradeProgressFill: document.getElementById('cuda-upgrade-progress-fill'),
+    cudaUpgradeProgressText: document.getElementById('cuda-upgrade-progress-text'),
     updateCheckBtn: document.getElementById('update-check-btn'),
     etaPanel: document.getElementById('eta-panel'),
     settingsSection: document.getElementById('settings-section'),
@@ -530,6 +538,141 @@ async function loadSystemInfo() {
     }
 }
 
+function renderCudaUpgrade() {
+    if (!elements.cudaUpgradeBanner) return;
+    const info = state.cudaUpgrade;
+    if (!info) {
+        elements.cudaUpgradeBanner.style.display = 'none';
+        return;
+    }
+
+    // Three terminal UI states:
+    //   1. requires_restart === true  -> success banner with restart prompt
+    //   2. applicable === true        -> blue banner with upgrade button
+    //   3. otherwise                  -> hidden
+    if (info.requires_restart) {
+        elements.cudaUpgradeBanner.className = 'cuda-upgrade-banner success';
+        elements.cudaUpgradeBanner.style.display = 'flex';
+        elements.cudaUpgradeText.textContent = t(
+            'CUDA runtime installed. Restart the app to enable CUDA acceleration.',
+            'CUDA 运行时已安装。请重启应用以启用 CUDA 加速。'
+        );
+        if (elements.cudaUpgradeBtn) elements.cudaUpgradeBtn.style.display = 'none';
+        if (elements.cudaUpgradeProgress) elements.cudaUpgradeProgress.style.display = 'none';
+        return;
+    }
+
+    if (!info.applicable) {
+        elements.cudaUpgradeBanner.style.display = 'none';
+        return;
+    }
+
+    elements.cudaUpgradeBanner.className = 'cuda-upgrade-banner';
+    elements.cudaUpgradeBanner.style.display = 'flex';
+    elements.cudaUpgradeText.textContent = t(
+        'NVIDIA GPU detected. Optional CUDA acceleration is available as a separate download (~600 MB).',
+        '检测到 NVIDIA 显卡。可选 CUDA 加速运行时（约 600 MB）单独下载。'
+    );
+    if (elements.cudaUpgradeBtn) {
+        elements.cudaUpgradeBtn.style.display = '';
+        elements.cudaUpgradeBtn.disabled = state.cudaUpgradeInProgress;
+        elements.cudaUpgradeBtn.textContent = state.cudaUpgradeInProgress
+            ? t('Downloading...', '下载中...')
+            : t('Upgrade to CUDA', '升级到 CUDA 加速');
+    }
+}
+
+async function loadCudaUpgradeStatus() {
+    if (!elements.cudaUpgradeBanner) return;
+    try {
+        const response = await fetch('/api/cuda-upgrade/status');
+        if (!response.ok) {
+            state.cudaUpgrade = null;
+        } else {
+            state.cudaUpgrade = await response.json();
+        }
+    } catch (error) {
+        console.error('Failed to load CUDA upgrade status:', error);
+        state.cudaUpgrade = null;
+    }
+    renderCudaUpgrade();
+}
+
+async function downloadCudaRuntime() {
+    if (state.cudaUpgradeInProgress) return;
+    if (!elements.cudaUpgradeProgress || !elements.cudaUpgradeProgressFill) return;
+
+    state.cudaUpgradeInProgress = true;
+    elements.cudaUpgradeBtn.disabled = true;
+    elements.cudaUpgradeBtn.textContent = t('Downloading...', '下载中...');
+    elements.cudaUpgradeProgress.style.display = 'block';
+    elements.cudaUpgradeProgressFill.style.width = '0%';
+    elements.cudaUpgradeProgressText.textContent = t('Starting...', '开始下载...');
+
+    try {
+        const response = await fetch('/api/cuda-upgrade/download', { method: 'POST' });
+        if (!response.ok) {
+            const errJson = await response.json().catch(() => ({}));
+            throw new Error(errJson.error || `HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.substring(6).trim();
+                if (!dataStr) continue;
+                const data = JSON.parse(dataStr);
+
+                if (data.status === 'downloading') {
+                    const pct = data.progress != null ? data.progress : 0;
+                    elements.cudaUpgradeProgressFill.style.width = `${pct}%`;
+                    let progressLine = state.currentLang === 'zh' && data.message_zh
+                        ? data.message_zh
+                        : (data.message || `Downloading ${data.file || ''}...`);
+                    if (data.file_index != null && data.total_files != null && data.file_index > 0) {
+                        progressLine += ` (${data.file_index}/${data.total_files})`;
+                    }
+                    elements.cudaUpgradeProgressText.textContent = progressLine;
+                } else if (data.status === 'done') {
+                    elements.cudaUpgradeProgressFill.style.width = '100%';
+                    elements.cudaUpgradeProgressText.textContent = state.currentLang === 'zh'
+                        ? (data.message_zh || 'CUDA 运行时已安装。')
+                        : (data.message || 'CUDA runtime installed.');
+                    await loadCudaUpgradeStatus();
+                    return;
+                } else if (data.status === 'error') {
+                    throw new Error(data.error || 'Download failed');
+                }
+            }
+        }
+    } catch (error) {
+        console.error('CUDA upgrade download failed:', error);
+        const prefix = state.currentLang === 'zh' ? 'CUDA 下载失败' : 'CUDA download failed';
+        if (typeof showToast === 'function') {
+            showToast(`${prefix}: ${error.message}`, 'error');
+        }
+        if (elements.cudaUpgradeProgressText) {
+            elements.cudaUpgradeProgressText.textContent = `${prefix}: ${error.message}`;
+        }
+    } finally {
+        state.cudaUpgradeInProgress = false;
+        if (elements.cudaUpgradeBtn) {
+            elements.cudaUpgradeBtn.disabled = false;
+            elements.cudaUpgradeBtn.textContent = t('Upgrade to CUDA', '升级到 CUDA 加速');
+        }
+    }
+}
+
 function setBenchmarkInProgress(active) {
     state.benchmarkInProgress = active;
     if (elements.benchmarkBtn) {
@@ -704,6 +847,7 @@ async function init() {
     renderFirstRunBanner();
     updateCharCount();
     await loadSystemInfo();
+    await loadCudaUpgradeStatus();
 
     // Check for saved language preference
     const savedLang = localStorage.getItem('bashi_lang') || localStorage.getItem('edgetts_lang');
@@ -943,6 +1087,10 @@ function setupEventListeners() {
 
     if (elements.firstRunDismissBtn) {
         elements.firstRunDismissBtn.addEventListener('click', completeFirstRun);
+    }
+
+    if (elements.cudaUpgradeBtn) {
+        elements.cudaUpgradeBtn.addEventListener('click', downloadCudaRuntime);
     }
 
     if (elements.updateCheckBtn) {
@@ -1771,6 +1919,7 @@ function switchLanguage(lang) {
     renderVoices(state.selectedCategory);
     renderStylePresets();
     renderSystemInfo();
+    renderCudaUpgrade();
     renderBenchmarkReferencePanel(state.eta?.references);
     renderEta();
 }

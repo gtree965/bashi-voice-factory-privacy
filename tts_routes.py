@@ -17,6 +17,13 @@ from backend_probe import (
     get_probe_cache_path,
     load_probe_cache,
 )
+from download_cuda_runtime import (
+    CudaRuntimeError,
+    detect_platform_subdir as detect_cuda_platform_subdir,
+    download_cuda_runtime_streaming,
+    installed_manifest_summary as cuda_installed_summary,
+    is_cuda_runtime_installed,
+)
 from local_tts_engine import OUTPUT_DIR, LocalTTSBusyError, LocalTTSError, service
 
 
@@ -43,6 +50,11 @@ _BENCHMARK_LOCK = threading.RLock()
 _BENCHMARK_FUTURE = None
 _SYSTEM_INFO_LOCK = threading.RLock()
 _SYSTEM_INFO_CACHE = None
+_CUDA_INSTALL_LOCK = threading.Lock()
+# Set True when a CUDA download finishes this process. The running GGUF kernel
+# was loaded with Vulkan; CUDA only kicks in on the next launch, so the UI
+# needs a restart prompt rather than a silent backend swap.
+_CUDA_UPGRADE_PENDING_RESTART = False
 
 
 def split_long_sentence(sentence: str, limit: int, is_cjk: bool = False) -> list:
@@ -467,6 +479,97 @@ def get_voices():
 @tts_bp.route("/api/system-info")
 def get_system_info():
     return jsonify(_system_info_payload())
+
+
+def _cuda_upgrade_status_payload() -> dict:
+    """Build the /api/cuda-upgrade/status response. Filesystem-fresh, never cached."""
+    system_info = _system_info_payload()
+    backend = system_info.get("backend")
+    vendor = (system_info.get("gpu_vendor") or "").lower()
+    gguf_accelerator = system_info.get("gguf_accelerator")
+
+    try:
+        platform_subdir = detect_cuda_platform_subdir()
+        platform_supported = True
+        unsupported_reason = None
+    except CudaRuntimeError as exc:
+        platform_subdir = None
+        platform_supported = False
+        unsupported_reason = str(exc)
+
+    installed = is_cuda_runtime_installed()
+    summary = cuda_installed_summary() if installed else None
+
+    # Hardware-side eligibility — we still let non-NVIDIA users download if
+    # they ask, but applicability drives whether the UI surfaces the chip
+    # button. The button only shows when GGUF is the active backend, the GPU
+    # is NVIDIA, no CUDA DLL is installed yet, and the platform has a bundle.
+    if not platform_supported:
+        applicable = False
+        reason = unsupported_reason
+    elif installed:
+        applicable = False
+        reason = "CUDA runtime already installed"
+    elif backend != "gguf":
+        applicable = False
+        reason = "Active backend is not GGUF; CUDA upgrade only applies to GGUF runtime"
+    elif vendor != "nvidia":
+        applicable = False
+        reason = "GPU vendor is not NVIDIA; CUDA acceleration would not help"
+    elif gguf_accelerator == "cuda":
+        applicable = False
+        reason = "GGUF runtime already reports CUDA acceleration"
+    else:
+        applicable = True
+        reason = None
+
+    return {
+        "success": True,
+        "applicable": applicable,
+        "installed": installed,
+        "platform_supported": platform_supported,
+        "platform_subdir": platform_subdir,
+        "reason": reason,
+        "installed_summary": summary,
+        "requires_restart": _CUDA_UPGRADE_PENDING_RESTART,
+        "gpu_vendor": vendor,
+        "current_accelerator": gguf_accelerator,
+    }
+
+
+@tts_bp.route("/api/cuda-upgrade/status")
+def cuda_upgrade_status():
+    return jsonify(_cuda_upgrade_status_payload())
+
+
+@tts_bp.route("/api/cuda-upgrade/download", methods=["POST"])
+def cuda_upgrade_download():
+    # Single-flight: refuse concurrent downloads. The lock is non-blocking so
+    # a second request gets an immediate 409 JSON rather than tying up a worker.
+    if not _CUDA_INSTALL_LOCK.acquire(blocking=False):
+        return _json_error("CUDA runtime download already in progress.", 409)
+
+    try:
+        platform_subdir = detect_cuda_platform_subdir()
+    except CudaRuntimeError as exc:
+        _CUDA_INSTALL_LOCK.release()
+        return _json_error(str(exc), 400)
+
+    def generate():
+        global _CUDA_UPGRADE_PENDING_RESTART
+        try:
+            for event in download_cuda_runtime_streaming(platform_subdir=platform_subdir):
+                if event.get("status") == "done":
+                    _CUDA_UPGRADE_PENDING_RESTART = True
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("status") in {"done", "error"}:
+                    break
+        except Exception as exc:  # pragma: no cover - runtime safety
+            yield f"data: {json.dumps({'status': 'error', 'error': str(exc)})}\n\n"
+        finally:
+            _CUDA_INSTALL_LOCK.release()
+
+    return Response(stream_with_context(generate()), content_type="text/event-stream")
 
 
 @tts_bp.route("/api/benchmark", methods=["POST"])

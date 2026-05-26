@@ -28,6 +28,7 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
   - ❌ Hard blocker: NPU EPs (Qualcomm QNN, DirectML NPU) require static shapes. Current `StatefulDecoder` has dynamic `audio_codes` sequence length, dynamic KV cache concat, dynamic slice/concat on conv history. Direct NPU compile is impossible — would require full model refactor to static padded shapes + masking. v0.3-α scope/risk recalibrated.
   - 📊 Calibrated timelines: v0.1.1 1-2 weeks → ~1 week. v0.2 4-6 weeks → 3-4 weeks. v0.3-α 4-6 weeks → 6+ weeks (or much more if decoder refactor needed).
   - 🔀 Priority swap: v0.3.0 should ship ARM64 Windows native (β) BEFORE NPU (α). ARM64 is standard engineering; NPU is gated by intensive ML refactor.
+- **2026-05-26 (later same day)**: v0.1.1 distribution shape locked as **Option C (Vulkan main zip + user-triggered CUDA add-on download)** after the universal-zip size measurement made Option A unattractive and Option B's "two zips on the release page" risked non-technical Chinese users picking the wrong one. Option C reuses the existing JIT-download infrastructure (parallel to GGUF model download), preserves the zero-auto-network privacy posture, and pays the ~600 MiB compressed add-on cost only for users who actually benefit. ModelScope add-on repo: `gtree592/bashi-qwen3-tts-cuda-runtime` with `win-x64/` subdirectory.
 
 ---
 
@@ -56,66 +57,75 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
 
 ## v0.1.1 — NVIDIA CUDA dual-backend (Windows patch)
 
-**Goal**: NVIDIA discrete GPU users on Windows get native CUDA acceleration with minimal setup. Original "same single zip" goal is under review after the 2026-05-26 size probe showed a universal CUDA+Vulkan zip would be ~672 MiB.
+**Goal**: NVIDIA discrete GPU users on Windows get native CUDA acceleration as a one-click in-app upgrade, without inflating the main zip for the AMD / Intel / CPU majority.
 
-**Why now**: Upstream HaujetZhao/Qwen3-TTS-GGUF uses llama.cpp, which ships CUDA-flavored binaries for every release. v0.1 chose Vulkan-only as a universal solution; v0.1.1 closes the obvious gap for NVIDIA users. Distribution may become either a separate NVIDIA zip or an optional CUDA add-on pack if the single-zip size is unacceptable.
+**Why now**: Upstream HaujetZhao/Qwen3-TTS-GGUF uses llama.cpp, which ships CUDA-flavored binaries for every release. v0.1 chose Vulkan-only as a universal solution; v0.1.1 closes the obvious gap for NVIDIA users.
 
-### Approach
+### Distribution shape (decided 2026-05-26, Option C)
 
-Bundle the **CUDA llama.cpp build matching the same `b<NNNN>` version** alongside the existing Vulkan build. `llama.cpp`'s `ggml_backend_load_all()` scans the bin folder lexicographically — `ggml-cuda.dll` loads before `ggml-vulkan.dll`, registers at lower index, and the backend scheduler prefers it automatically. On NVIDIA + CUDA driver ≥ 550.x → CUDA wins. On AMD/Intel/no-CUDA-driver → `LoadLibrary`/`cudaInit` fails gracefully, CUDA backend is excluded from scheduler, falls back to Vulkan transparently. **Minimal Python-layer changes required** for backend reporting — the review surfaced that the current UI / `/api/system-info` would still report "Vulkan + DirectML" on NVIDIA even when CUDA is actually active. Without backend-reporting fix, the feature is unverifiable end-to-end.
+After the size probe showed a universal CUDA+Vulkan zip lands at ~672 MiB (and ~605 MiB even after trimming unused CLI tools), three options were considered:
+
+- A: accept the larger universal zip → ~2× the v0.1 download size penalizes the AMD/Intel/CPU majority who can't use CUDA
+- B: ship separate `windows-vulkan` and `windows-nvidia-cuda` zips → non-technical Chinese users likely pick the wrong one; doubles release-page artifacts
+- **C (chosen): main zip stays Vulkan-only; CUDA bundle is a user-triggered in-app download** → reuses the JIT-download infrastructure (`download_gguf_model.py` already does the same for the 2.2 GiB model on first launch), pays the cost only for users who benefit, preserves the zero-auto-network privacy posture (still user-initiated)
+
+Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `GGUF + Vulkan (Vulkan fallback)`; the UI surfaces an "Upgrade to NVIDIA CUDA acceleration" banner next to the chip with a one-click download (~600 MiB compressed from a separate ModelScope repo: `gtree592/bashi-qwen3-tts-cuda-runtime`, subdirectory `win-x64/`). After download + restart, `llama.cpp`'s `ggml_backend_load_all()` scans the bin folder lexicographically — `ggml-cuda.dll` loads before `ggml-vulkan.dll`, registers at lower index, scheduler prefers it. AMD/Intel/older-NVIDIA-driver users never see the banner (`/api/cuda-upgrade/status` returns `applicable: false`).
 
 ### Concrete steps
 
 1. **Identify matching upstream release**. Current bundled: `llama-b7798-bin-win-vulkan-x64.zip`. Match: `llama-b7798-bin-win-cuda-12.4-x64.zip`. Same `b<NNNN>` is critical — ggml ABI changes between builds.
-2. **Verify the bundling model** (Finding 2 — small but load-bearing): determine whether `ggml-cuda.dll` plugs into the existing `llama.dll` + `ggml.dll` + `ggml-base.dll` (plugin model, drop-in alongside Vulkan), OR whether the CUDA build's versions of those core files must coexist / replace. Current bin folder contains: `llama.dll`, `ggml.dll`, `ggml-base.dll`, `ggml-vulkan.dll`, plus many `ggml-cpu-*.dll` variants. If the CUDA build of `llama.dll` is binary-incompatible with the Vulkan build of `llama.dll`, we have an actual problem. Decide before committing to "single zip dual backend".
+2. **Verify the bundling model** (Finding 2): confirm whether `ggml-cuda.dll` plugs into the existing `llama.dll` + `ggml.dll` + `ggml-base.dll` shipped with the Vulkan build (plugin model, drop-in alongside Vulkan after CUDA add-on download), OR whether the CUDA build's versions of those core files must coexist / replace. If the latter, the CUDA add-on may need to overwrite `llama.dll` / `ggml.dll` (CUDA-built version of those files should still expose Vulkan via the runtime registry — verify in testing).
 3. **Final DLL inventory** (cuDNN deliberately omitted — llama.cpp uses cuBLAS, not cuDNN):
    - `ggml-cuda.dll` (the backend)
    - `cudart64_12.dll` (CUDA runtime)
    - `cublas64_12.dll` (cuBLAS)
    - `cublasLt64_12.dll` (cuBLAS Linear Algebra)
-   - Total: ~150-200 MB compressed (was 200-400 MB estimate; cuDNN omission saved 100-500 MB)
-4. **Bundle**: drop the above into `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/bin/` alongside Vulkan DLLs. If Step 2 says core llama.dll must change, document that decision (probably ship the CUDA-built `llama.dll` since it should still expose Vulkan via the runtime registry; verify in testing).
-5. **Backend-reporting fix** (NEW step from Finding 1, ~half-day work):
-   - Extend `backend_probe.py` GGUF probe to detect which ggml accelerator backend actually got chosen (CUDA vs Vulkan vs CPU). `llama.cpp` exposes this via `llama_print_system_info()` or per-device query; pick whichever the Python wrapper makes easiest.
-   - Surface the chosen accelerator in `tts_routes.py` `/api/system-info` response (new field `gguf_accelerator` alongside existing `backend`).
-   - Update the UI backend chip in `static/js/app.js` to render `GGUF + CUDA` when applicable, in addition to existing `GGUF + Vulkan + DirectML`.
-   - User can now verify CUDA is active by glancing at the chip — load-bearing for the v0.1.1 acceptance gate.
-6. **Verify auto-selection** (now actually verifiable thanks to Step 5):
-   - NVIDIA + current CUDA driver: chip says `GGUF + CUDA`, token/sec ≥ 1.5× the Vulkan-only number on the same card
-   - AMD / Intel / NVIDIA with outdated driver: chip says `GGUF + Vulkan`, no regression
-   - All: app boots, no startup crash, decoder output identical
-7. **Measure size impact / choose distribution shape**. The size probe already measured the single universal CUDA+Vulkan zip at 704,261,799 bytes / 671.64 MiB. Removing unused llama CLI tools and the archived Vulkan source zip saves only ~66.8 MiB compressed, so the single-zip package still lands around ~605 MiB. Decide before release:
-   - Option A: accept the larger universal zip and document the size bump.
-   - Option B: ship separate `windows-vulkan` and `windows-nvidia-cuda` zips.
-   - Option C: keep the main zip Vulkan-only and add a user-triggered CUDA add-on downloader.
+   - Plus core `llama.dll` / `ggml.dll` / `ggml-base.dll` from the CUDA build, if Step 2 says they must replace the Vulkan-build versions
+   - Total: ~600 MiB compressed for the in-app add-on payload
+4. **Publish the CUDA add-on bundle on ModelScope**:
+   - Repo: `gtree592/bashi-qwen3-tts-cuda-runtime`
+   - Layout: `win-x64/manifest.json` + `win-x64/cuda-runtime-b7798-win-cuda-12.4-x64.zip`; future Linux NVIDIA support (v0.2.1) populates `linux-x64/`
+   - Manifest schema: `{ "platform": "win-x64", "llama_cpp_build": "b7798", "cuda_version": "12.4", "archives": [{ "path": ..., "sha256": ..., "size": ..., "extract": [{ "path": ..., "sha256": ..., "size": ... }, ...] }] }`
+5. **Backend-reporting fix** (Finding 1 — landed in working copy):
+   - `backend_probe.detect_gguf_accelerator()` does a filesystem inventory of `inference/bin/` + hardware vendor check, returns `"cuda" | "vulkan" | "cpu"`. (Filesystem-based detection is robust and avoids re-invoking the kernel just to read its print-system-info output.)
+   - `/api/system-info` exposes new `gguf_accelerator` field; chip label dispatches: `GGUF + CUDA` (CUDA active) / `GGUF + Vulkan (Vulkan fallback)` (NVIDIA without CUDA DLL) / `GGUF + CPU` (user-forced via `GGUF_LLM_USE_GPU=0`)
+6. **CUDA add-on download infrastructure** (NEW for Option C — landed in working copy):
+   - `download_cuda_runtime.py`: dependency-free generator-based downloader (Range/resume, idle timeout, SHA256, manifest-driven). Mirrors `download_gguf_model.py`'s pattern + `model_manager.py`'s SSE event shape so the frontend reuses existing download UI plumbing.
+   - `/api/cuda-upgrade/status` (GET): reports `{applicable, installed, platform_supported, requires_restart, ...}` — drives banner visibility
+   - `/api/cuda-upgrade/download` (POST, SSE): single-flight; yields byte-progress events; sets in-memory `requires_restart` flag on completion (the already-loaded kernel was Vulkan-bound; CUDA only kicks in on next launch)
+   - Frontend: "Upgrade to NVIDIA CUDA acceleration / 升级到 CUDA 加速" banner under the backend chip when `applicable === true`; replaced by "Restart app to enable CUDA / 重启应用以启用 CUDA" success banner after install
+7. **End-to-end verification** (on NVIDIA box):
+   - Fresh extract on NVIDIA Windows machine → chip says `GGUF + Vulkan (Vulkan fallback)` + upgrade banner visible
+   - Click upgrade → download progress → success banner → app restart → chip says `GGUF + CUDA`
+   - Measured token/sec ≥ 1.5× the same card's Vulkan number
+   - AMD RX 590 / RX 9060 XT / Intel N100 / N305: chip says `GGUF + Vulkan` (or appropriate vendor label); upgrade banner hidden; no regression vs v0.1
+   - User-forced CPU mode (`Start_CPU_only_仅CPU启动.bat`): chip says `GGUF + CPU`; upgrade banner hidden
 8. **README update**:
-   - Hardware Coverage Matrix: NVIDIA rows change from ⚠️ to ✓ Tested (after NVIDIA verification)
-   - Network Behavior: no change (no new download)
+   - Hardware Coverage Matrix: NVIDIA rows change from ⚠️ to ✓ Tested (with the caveat "optional CUDA upgrade via in-app download")
+   - Network Behavior section: mention the optional CUDA add-on as another user-initiated download, parallel to GGUF model and STT models
    - Version badge bump
-9. **Other small items consolidated into v0.1.1** (only if they don't slip the timeline):
-   - `Start_CPU_only_仅CPU启动.bat` top-level convenience launcher (5-min add) so N100/N305 users can A/B-test CPU vs iGPU without env var fiddling
-   - Whatever bug reports surface from v0.1 public release
+9. **`Start_CPU_only_仅CPU启动.bat`** (landed in working copy): top-level convenience launcher so N100/N305 users can A/B-test CPU vs iGPU without env var fiddling. Sets `GGUF_LLM_USE_GPU=0` + `GGUF_ONNX_PROVIDER=CPU` then delegates to `run_portable.bat`.
 
 ### Acceptance criteria
 
-- New zip extracts + boots on NVIDIA + AMD machines without regression
-- On NVIDIA discrete GPU: UI chip displays `GGUF + CUDA`; measured token/sec ≥ 1.5× the same card's previous Vulkan number
-- On AMD RX 590 / RX 9060 XT / Intel N100 / N305: UI chip displays `GGUF + Vulkan` (or `+ DirectML`); no regression vs v0.1
-- Distribution shape decided explicitly (universal large zip vs separate NVIDIA zip vs optional CUDA add-on), with measured size documented in release notes
+- v0.1.1 main zip stays close to v0.1 size (~108 MB), no penalty for non-NVIDIA users
+- On NVIDIA: upgrade banner appears, download succeeds, restart switches chip to `GGUF + CUDA`, token/sec ≥ 1.5× Vulkan baseline
+- On AMD / Intel / forced-CPU / non-Windows: upgrade banner hidden by `/api/cuda-upgrade/status`; no regression vs v0.1
+- CUDA add-on ModelScope repo populated with manifest + SHA256s; download resumes correctly after network interruption
 - README hardware table reflects measured CUDA numbers
 
 ### Risks (updated after review)
 
 - **No NVIDIA test hardware available** (Alex's discrete GPU is AMD). Mitigations: community tester recruited via the WeChat group or GitHub issues; or a temporary NVIDIA box is sourced; or release as "v0.1.1-rc1" tagged for community NVIDIA verification before final.
-- **DLL coexistence may not be plug-and-play** (Finding 2 — until Step 2 confirms otherwise): if the CUDA build's `llama.dll` / `ggml.dll` aren't binary-compatible with the Vulkan ones, "single zip dual backend" may need a tiny dispatcher (e.g., launcher copies the right `llama.dll` into bin before app start based on detected NVIDIA presence). Falls back to v0.2 "separate NVIDIA zip" approach if dispatcher gets complicated.
-- **NVIDIA driver compatibility**: CUDA 12.4 needs driver ≥ 550.x. Older NVIDIA drivers won't get CUDA — Vulkan fallback handles it transparently (verified).
+- **DLL coexistence may not be plug-and-play** (Finding 2 — until Step 2 confirms otherwise): if the CUDA build's `llama.dll` / `ggml.dll` aren't binary-compatible with the Vulkan ones, the CUDA add-on may have to overwrite them. Acceptable as long as the CUDA-built core DLLs still expose Vulkan (probable — they're a superset). Worst case the add-on becomes "swap mode" instead of "additive", documented in release notes.
+- **NVIDIA driver compatibility**: CUDA 12.4 needs driver ≥ 550.x. Older NVIDIA drivers don't qualify — `/api/cuda-upgrade/status` returns `applicable: false`, banner hidden, Vulkan path used (transparent fallback, verified).
 - ~~**Backend auto-selection priority**~~ — **resolved** by source review: `llama.cpp` registers backends in lexicographic DLL discovery order; CUDA naturally takes precedence over Vulkan on NVIDIA hardware without any wrapper override.
-- **CUDA package size is larger than expected** (size probe, 2026-05-26): required CUDA DLLs alone contribute ~567.5 MiB compressed to the final package. This likely invalidates the original "single zip under 500 MB" target unless Alex explicitly accepts a larger download.
-- ~~**cuDNN size**~~ — **resolved**: cuDNN not used by llama.cpp, omitted entirely; however cuBLASLt + ggml-cuda are still large.
+- ~~**CUDA package size**~~ — **resolved** by Option C: ~600 MiB add-on download only for users who opt in, not bundled in main zip.
+- ~~**cuDNN size**~~ — **resolved**: cuDNN not used by llama.cpp, omitted entirely.
 
 ### Effort estimate
 
-**~1 week calendar** (recalibrated, down from 1-2). ~3-4 working days: Step 2 verification (½ day), Step 5 backend reporting (½ day), bundle + test on NVIDIA box (1-2 days), README + release notes (½ day). Gated mostly on NVIDIA test machine access.
+**~1 week calendar** (recalibrated, down from 1-2). Working-copy progress: backend reporting (Step 5), download infrastructure (Step 6), CPU-only launcher (Step 9) already implemented. Remaining: ModelScope upload (Step 4, ~½ day), NVIDIA end-to-end verification (Step 7, gated on test hardware), README + release notes (Step 8, ~½ day).
 
 ---
 
