@@ -3,11 +3,11 @@
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**Version:** 0.1.0
+**Version:** 0.1.1
 
 A fully offline desktop web app for high-quality text-to-speech and speech-to-text. After the one-time first-launch download, **everything runs on your own machine** — TTS synthesis, audio export, transcription, and storage. No audio data ever leaves your computer.
 
@@ -30,7 +30,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 ### 🎯 Automatic Backend Selection
 - **GGUF + Vulkan** for AMD / Intel / iGPU users (default, fast, RAM-friendly).
-- **PyTorch + CUDA** for NVIDIA users (advanced setup; weights download separately).
+- **GGUF + CUDA** for NVIDIA users via a one-click in-app upgrade (optional ~595 MB add-on download; no manual weight setup). New in v0.1.1.
 - **CPU fallback** for entry-level hardware (works on Intel N100-class boxes).
 - One-click **speed test** calibrates ETA estimates to your specific machine.
 
@@ -81,6 +81,8 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 
 **Runtime network activity**: zero. TTS synthesis, STT transcription, and audio export are 100% on-device.
 
+**Optional CUDA acceleration** (NVIDIA users, user-initiated only): when an NVIDIA GPU is detected, the UI shows an "Upgrade to CUDA acceleration" banner. Clicking it downloads a one-time ~595 MB CUDA runtime add-on from `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-cuda-runtime`. This is entirely optional — the Vulkan path works on NVIDIA without it. Nothing downloads unless you click.
+
 **Manual update check** (user-initiated only, never automatic): the UI footer "Check for updates" button opens a release page in a new browser tab. You can also check manually anytime at:
 
 - GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
@@ -100,11 +102,13 @@ The table below shows **actually measured** numbers from author hardware. The bu
 | AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 s | ~5-10 min | ✓ Tested |
 | Intel N305 laptop + UHD iGPU | GGUF + Vulkan / DirectML | 53 s | 25-46 min | ✓ Tested 2026-05-25 |
 | Intel N100 mini-PC + UHD iGPU | GGUF + Vulkan / DirectML | 126 s | 58 min - 1h49 min | ✓ Tested 2026-05-25 |
-| NVIDIA RTX / Apple Silicon / Intel Arc | — | not yet measured | not yet measured | not validated in v0.1 |
+| NVIDIA A10 (cloud) | GGUF + CUDA (after upgrade) | __ s | __ | ✓ Tested 2026-05 (cloud) |
+| NVIDIA A10 (cloud, before upgrade) | GGUF + Vulkan fallback | __ s | __ | ✓ Tested 2026-05 (cloud) |
+| Apple Silicon / Intel Arc | — | not yet measured | not yet measured | not validated yet |
 
 > ⚠️ **Entry-level CPUs (Intel N100 / N305 class) are only practical for short text — under ~200 characters per generation.** A 5,000-character essay would take 2-9 hours on these boxes. For long-form audio (lectures, audiobooks), please use discrete-GPU hardware (AMD RX 500/600/9000 series, NVIDIA RTX class).
 
-> ℹ️ NVIDIA users on Windows can also use the GGUF + Vulkan path (NVIDIA cards support Vulkan via the proprietary driver). The PyTorch + CUDA path in v0.1 requires manual weight setup; it is not auto-configured.
+> ℹ️ **NVIDIA users**: the default path is GGUF + Vulkan (NVIDIA cards support Vulkan via the proprietary driver). For native CUDA acceleration, click the one-click in-app upgrade banner (v0.1.1+) — it downloads a ~595 MB CUDA runtime add-on, no manual weight setup required. The same A10 card measured roughly __× faster on CUDA than on the Vulkan fallback. Desktop RTX numbers welcome via GitHub Issues.
 
 ### 🧩 Hardware Coverage Matrix
 
@@ -112,8 +116,8 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 | Hardware class | Acceleration path used | Status |
 |---|---|---|
-| NVIDIA RTX 30 / 40 / 50 | GGUF + Vulkan + DirectML | ⚠️ Works, but **suboptimal** — no CUDA path in v0.1 |
-| NVIDIA GTX 10 / 16 | GGUF + Vulkan + DirectML | ⚠️ Same as above |
+| NVIDIA RTX 30 / 40 / 50 | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ CUDA flow verified on cloud A10 (v0.1.1); desktop RTX numbers welcome via Issues |
+| NVIDIA GTX 10 / 16 | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ Same flow; CUDA needs driver ≥ 550.x, else Vulkan fallback |
 | AMD RX 500 / 600 / 7000 / 9000 (discrete) | GGUF + Vulkan + DirectML | ✅ Tested (RX 590, RX 9060 XT) |
 | Intel Arc A-series (A380 / A580 / A750 / A770) | GGUF + Vulkan + DirectML | ✅ Should work — not yet measured |
 | Intel iGPU (UHD / Iris Xe / Arc iGPU) | GGUF + Vulkan + DirectML | ✅ Tested (Intel N305 UHD) |
@@ -124,7 +128,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 ### ⚙️ Known Limitations (roadmap)
 
-- **NVIDIA discrete GPU users currently run via Vulkan, not CUDA.** A 4090 takes the same path as an N100 iGPU. A dedicated NVIDIA + CUDA build is on the v0.2 roadmap.
+- **NVIDIA CUDA is opt-in, not bundled.** By default NVIDIA cards use the Vulkan path; native CUDA acceleration requires the one-click in-app upgrade (~595 MB add-on, v0.1.1+). This keeps the main download small for the AMD / Intel / CPU majority. Requires NVIDIA driver ≥ 550.x.
 - **Weak iGPU may be slower than pure CPU.** On Intel N100-class hardware, DirectML / Vulkan transfer + scheduling overhead can outweigh GPU benefit. A/B test by launching from a cmd window after `set GGUF_LLM_USE_GPU=0 && set GGUF_ONNX_PROVIDER=CPU` — feedback on real speed numbers welcome.
 - **NPU acceleration is not yet used** (Snapdragon X Elite, Intel Lunar Lake AI Boost, AMD Ryzen AI 300). Under investigation for v0.2+.
 - **ARM64 Windows is not natively supported** (Surface Pro 11, Galaxy Book4 Edge, etc.). x64 emulation works but is slow. Native ARM64 build is a v0.3+ candidate.
@@ -137,6 +141,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 |---|---|
 | `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from GitHub Releases or the files.fm mirror; the BOM bug was fixed in v0.1.0 final |
 | pip install stops mid-way after WiFi blip | Retry triggers automatically (3 attempts, 5s/30s/120s backoff). If all 3 fail, fix network and re-run the launcher — pip caches what's already installed |
+| pip install fails with a "long path support" message | Run the registry one-liner from the launcher's advisory in an Administrator PowerShell, then re-launch |
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
 | App exits with "No usable backend was found" | Check `launch_log.txt` — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
 | STT download says "镜像失败" | Should not happen in v0.1.0 final — old behavior from removed ModelScope path |
@@ -148,8 +153,9 @@ Full log path: `bashi-privacy-app\launch_log.txt`
 ## 📦 What's in the Zip
 
 ```
-bashi-voice-factory-privacy-v0.1.0/
+bashi-voice-factory-privacy-v0.1.1/
 ├── Start_启动.bat                                       ← double-click here
+├── Start_CPU_only_仅CPU启动.bat                         ← force CPU mode (entry-level iGPU A/B)
 ├── README.md                                            ← this file
 ├── README_CN.md                                         ← Chinese version
 ├── LICENSE                                              ← MIT license

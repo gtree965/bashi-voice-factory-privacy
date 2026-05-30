@@ -99,6 +99,28 @@ function Configure-EmbeddedPython {
     Add-PthEntry -Entry (Join-Path $PackageRoot "vulkan_backend_spike\Qwen3-TTS-GGUF")
 }
 
+function Assert-WindowsLongPathSupport {
+    $lpKey = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+    $lpVal = (Get-ItemProperty -Path $lpKey -Name "LongPathsEnabled" -ErrorAction SilentlyContinue).LongPathsEnabled
+    if ($lpVal -eq 1) {
+        return
+    }
+
+    '[ERROR] Windows long-path support is disabled.' | Add-Content -Path $LogFile -Encoding utf8
+    Write-Host ""
+    Write-Host "[ERROR] Windows long-path support is disabled. pip install will fail on packages with deep paths."
+    Write-Host "[ERROR] Windows 长路径支持未开启，pip 安装会失败。"
+    Write-Host ""
+    Write-Host "Fix (run once in an Administrator PowerShell, then re-launch):"
+    Write-Host "修复方法（在管理员 PowerShell 里运行一次，然后重新启动启动器）："
+    Write-Host ""
+    Write-Host '  New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force'
+    Write-Host ""
+    Write-Host "Microsoft docs: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation"
+    Read-Host "Press Enter to exit / 按回车退出"
+    exit 1
+}
+
 function Ensure-Pip {
     $pipCheckExit = Invoke-NativeCommand { & $Python -m pip --version *> $null }
     if ($pipCheckExit -eq 0) {
@@ -140,6 +162,7 @@ Write-Host "可按 Ctrl+C 取消；重新启动会尽量复用已完成的文件
 Write-Host ""
 
 Configure-EmbeddedPython
+Assert-WindowsLongPathSupport
 
 $pipArgs = @()
 $timeZone = (Get-TimeZone).Id

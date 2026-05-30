@@ -143,6 +143,7 @@ function Remove-StagedDebris {
             $_.Name -like "*.pyc" -or
             $_.Name -like "*.pyo" -or
             $_.Name -like "*.log" -or
+            $_.Name -like "llama-*-bin-*.zip" -or
             $_.Name -like "*.odt" -or
             $_.Name -like ".~lock.*#"
         } |
@@ -193,7 +194,7 @@ function Assert-LauncherCompatibility {
 
         if (Test-Path -LiteralPath $windowsPowerShell) {
             $escaped = $file.FullName.Replace("'", "''")
-            $parseCommand = '$ErrorActionPreference = "Stop"; $null = [scriptblock]::Create((Get-Content -LiteralPath ''' + $escaped + ''' -Raw))'
+            $parseCommand = '$ErrorActionPreference = ''Stop''; $null = [scriptblock]::Create((Get-Content -LiteralPath ''' + $escaped + ''' -Raw))'
             & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $parseCommand
             if ($LASTEXITCODE -ne 0) {
                 throw ("{0} failed Windows PowerShell parser validation." -f $file.FullName)
@@ -219,6 +220,7 @@ function Stage-Package {
         "app.py",
         "audio_encoding.py",
         "backend_probe.py",
+        "download_cuda_runtime.py",
         "download_gguf_model.py",
         "LICENSE",
         "local_tts_engine.py",
@@ -304,6 +306,7 @@ exit /b %ERRORLEVEL%
             throw "Missing top-level doc source: $src"
         }
         Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
+        Copy-Item -LiteralPath $src -Destination (Join-Path $appDest $name) -Force
     }
     foreach ($name in @("LICENSE", "VERSION")) {
         $src = Join-Path $AppRoot $name

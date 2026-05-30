@@ -232,11 +232,11 @@ def get_probe_order(hardware: HardwareProfile) -> list[BackendName]:
     os_name = hardware.normalized_os
     vendor = hardware.normalized_vendor
 
+    if os_name == "windows" and hardware.has_vulkan:
+        return ["gguf", "pytorch"]
+
     if vendor == "nvidia" and hardware.has_cuda:
         return ["pytorch", "gguf"]
-
-    if os_name == "windows" and vendor in {"amd", "intel"} and hardware.has_vulkan and hardware.has_dml:
-        return ["gguf", "pytorch"]
 
     if os_name == "linux" and vendor == "amd" and hardware.has_rocm:
         return ["pytorch", "gguf"]
