@@ -415,7 +415,7 @@ function getBenchmarkStorageKey() {
     const backend = info.backend || 'unknown';
     const model = info.model_default || 'unknown-model';
     const device = info.gpu_device_identity || 'unknown-device';
-    return `bashi_benchmark_v1:${backend}:${model}:${device}`;
+    return `bashi_benchmark_v2:${backend}:${model}:${device}`;
 }
 
 function getCurrentSynthesisMode(text = elements.textInput?.value || '') {
@@ -494,7 +494,7 @@ function renderBenchmarkReferencePanel(references = null) {
 
     if (state.benchmarkInProgress) {
         elements.benchmarkReferencePanel.innerHTML = escapeHtml(
-            t('Running a 25-character speed test. Please wait...', '正在运行 25 字测速，请稍候...')
+            t('Warming the model, then timing a 25-character Chinese speed test. Please wait...', '正在预热模型，然后运行 25 字中文测速，请稍候...')
         );
         return;
     }
@@ -507,7 +507,13 @@ function renderBenchmarkReferencePanel(references = null) {
     }
 
     const rows = [];
-    rows.push(`<div><strong>${escapeHtml(t('Based on this quick test', '基于本次快速测速'))}</strong>: ${escapeHtml(formatSeconds(state.benchmark.inference_seconds))} / ${state.benchmark.char_count} ${escapeHtml(t('chars', '字'))}</div>`);
+    rows.push(`<div><strong>${escapeHtml(t('Based on this warm speed test', '基于本次预热后测速'))}</strong>: ${escapeHtml(formatSeconds(state.benchmark.inference_seconds))} / ${state.benchmark.char_count} ${escapeHtml(t('Chinese chars', '中文字'))}</div>`);
+    if (state.benchmark.warmup_excluded) {
+        const warmupDetail = state.benchmark.warmup_seconds != null
+            ? `: ${formatSeconds(state.benchmark.warmup_seconds)}`
+            : '';
+        rows.push(`<div>${escapeHtml(t('Model warm-up was excluded from this timing', '模型预热时间未计入本次测速'))}${escapeHtml(warmupDetail)}</div>`);
+    }
     if (Array.isArray(references)) {
         references.forEach(row => {
             const estimate = row.estimate;
@@ -710,8 +716,11 @@ async function runBenchmark() {
             throw new Error(result.error || fallback);
         }
         saveBenchmark(result);
+        const benchmarkLabel = result.warmup_excluded
+            ? t('Warm speed test done', '预热后测速完成')
+            : t('Speed test done', '测速完成');
         showToast(
-            t(`Speed test done: ${formatSeconds(result.inference_seconds)}`, `测速完成：${formatSeconds(result.inference_seconds)}`),
+            `${benchmarkLabel}: ${formatSeconds(result.inference_seconds)}`,
             'success'
         );
         requestEstimate({ includeReferences: true });
@@ -784,7 +793,10 @@ function renderEta(data = state.eta) {
         const low = state.currentLang === 'zh' ? data.estimate.low.display_zh : data.estimate.low.display_en;
         const high = state.currentLang === 'zh' ? data.estimate.high.display_zh : data.estimate.high.display_en;
         html = `<div><strong>${escapeHtml(t('Current text estimate', '当前文本预计'))}</strong>: ${escapeHtml(low)} - ${escapeHtml(high)} · ${chars.toLocaleString()} ${escapeHtml(t('chars', '字'))} · ${escapeHtml(workUnit)}</div>`;
-        html += `<div>${escapeHtml(t('Based on quick benchmark, rough range only.', '基于快速测速，仅为粗略范围。'))}</div>`;
+        const estimateSourceText = state.benchmark?.warmup_excluded
+            ? t('Based on warmed quick benchmark, rough range only.', '基于预热后的快速测速，仅为粗略范围。')
+            : t('Based on quick benchmark, rough range only.', '基于快速测速，仅为粗略范围。');
+        html += `<div>${escapeHtml(estimateSourceText)}</div>`;
     } else {
         html = `<div><strong>${escapeHtml(t('Current text', '当前文本'))}</strong>: ${chars.toLocaleString()} ${escapeHtml(t('chars', '字'))} · ${chunks} ${escapeHtml(t('chunks', '段'))}</div>`;
     }

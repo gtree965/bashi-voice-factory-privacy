@@ -228,44 +228,39 @@ if (Test-Path $ModelDownloadScript) {
         Write-Host "       After that, synthesis runs offline."
         Write-Host "       下载完成后，语音合成可本地离线运行。"
         Write-Host ""
-        $modelChoice = Read-Host "Download GGUF model from ModelScope now? / 现在从 ModelScope 下载 GGUF 模型？ [y/N]"
-        if ($modelChoice -match "^[Yy]$") {
-            Write-Host ""
-            Write-Host '[INFO] Downloading GGUF runtime model pack...'
-            Write-Host '[INFO] 正在下载 GGUF 运行模型包...'
-            '[STEP] download_gguf_model.py' | Add-Content -Path $LogFile -Encoding utf8
+        Write-Host '[INFO] Starting GGUF model download now. Press Ctrl+C to cancel; re-run this launcher to resume.'
+        Write-Host '[INFO] 现在开始下载 GGUF 模型。可按 Ctrl+C 取消；重新运行启动器会自动续传。'
+        Write-Host ""
+        Write-Host '[INFO] Downloading GGUF runtime model pack...'
+        Write-Host '[INFO] 正在下载 GGUF 运行模型包...'
+        '[STEP] download_gguf_model.py' | Add-Content -Path $LogFile -Encoding utf8
 
-            $ggufMaxAttempts = 3
-            $ggufBackoffSeconds = @(5, 30, 120)
-            $modelDownloadExit = -1
-            for ($attempt = 1; $attempt -le $ggufMaxAttempts; $attempt++) {
-                if ($attempt -gt 1) {
-                    $wait = $ggufBackoffSeconds[$attempt - 2]
-                    Write-Host ""
-                    Write-Host ('[INFO] GGUF download interrupted. Resuming in {0}s (attempt {1}/{2}); already-downloaded bytes are reused.' -f $wait, $attempt, $ggufMaxAttempts)
-                    Write-Host ('[INFO] GGUF 下载中断。{0} 秒后续传（第 {1}/{2} 次）；已下载部分会自动复用。' -f $wait, $attempt, $ggufMaxAttempts)
-                    Start-Sleep -Seconds $wait
-                }
-                $modelDownloadExit = Invoke-NativeCommandWithUtf8Log { & $Python $ModelDownloadScript }
-                if ($modelDownloadExit -eq 0) { break }
-            }
-
-            if ($modelDownloadExit -ne 0) {
+        $ggufMaxAttempts = 3
+        $ggufBackoffSeconds = @(5, 30, 120)
+        $modelDownloadExit = -1
+        for ($attempt = 1; $attempt -le $ggufMaxAttempts; $attempt++) {
+            if ($attempt -gt 1) {
+                $wait = $ggufBackoffSeconds[$attempt - 2]
                 Write-Host ""
-                Write-Host '[WARN] GGUF model download did not complete after retries.'
-                Write-Host "       GGUF 模型多次重试后仍未下载完成。"
-                Write-Host "       The app will continue to start; you can retry later from the launcher."
-                Write-Host "       程序将继续启动；可稍后再次运行启动器自动续传。"
-                Write-Host ("       Log: " + $LogFile)
+                Write-Host ('[INFO] GGUF download interrupted. Resuming in {0}s (attempt {1}/{2}); already-downloaded bytes are reused.' -f $wait, $attempt, $ggufMaxAttempts)
+                Write-Host ('[INFO] GGUF 下载中断。{0} 秒后续传（第 {1}/{2} 次）；已下载部分会自动复用。' -f $wait, $attempt, $ggufMaxAttempts)
+                Start-Sleep -Seconds $wait
             }
-            else {
-                Write-Host '[OK] GGUF runtime model pack is ready.'
-                Write-Host '[OK] GGUF 运行模型包已就绪。'
-            }
+            $modelDownloadExit = Invoke-NativeCommandWithUtf8Log { & $Python $ModelDownloadScript }
+            if ($modelDownloadExit -eq 0) { break }
+        }
+
+        if ($modelDownloadExit -ne 0) {
+            Write-Host ""
+            Write-Host '[WARN] GGUF model download did not complete after retries.'
+            Write-Host "       GGUF 模型多次重试后仍未下载完成。"
+            Write-Host "       The app will continue to start; you can retry later from the launcher."
+            Write-Host "       程序将继续启动；可稍后再次运行启动器自动续传。"
+            Write-Host ("       Log: " + $LogFile)
         }
         else {
-            Write-Host '[INFO] Skipping GGUF model download for now.'
-            Write-Host '[INFO] 暂时跳过 GGUF 模型下载。'
+            Write-Host '[OK] GGUF runtime model pack is ready.'
+            Write-Host '[OK] GGUF 运行模型包已就绪。'
         }
     }
 }

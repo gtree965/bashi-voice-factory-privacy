@@ -59,7 +59,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 2. **Double-click `Start_启动.bat`** at the top level of the extracted folder.
 3. First launch will:
    - Install Python dependencies (~700 MB, 8-15 min depending on network/CPU)
-   - Prompt to download the GGUF model (~2.2 GB, 2-15 min depending on network)
+   - Automatically download the GGUF model when missing (~2.2 GB, 2-15 min depending on network; Ctrl+C cancels and the next launch resumes)
    - Open `http://127.0.0.1:5050` in your default browser
 4. After first launch, **all subsequent launches are offline** and start in ~5 seconds.
 

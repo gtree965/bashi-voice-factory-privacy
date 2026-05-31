@@ -42,6 +42,7 @@ def _read_app_version() -> str:
 
 VERSION = _read_app_version()
 BENCHMARK_TEXT = "今天下午三点，我们将在会议室讨论项目进展和预算表。"
+BENCHMARK_WARMUP_TEXT = "你好。"
 BENCHMARK_TIMEOUT_SECONDS = 180
 REFERENCE_CHAR_COUNTS = (1000, 5000)
 VALID_SYNTHESIS_MODES = {"auto", "single", "long", "sentence", "reference"}
@@ -348,6 +349,17 @@ def _read_audio_duration_seconds(filename: str) -> float | None:
     return None
 
 
+def _delete_generated_audio(filename: str | None) -> None:
+    if not filename:
+        return
+    try:
+        audio_path = OUTPUT_DIR / filename
+        if audio_path.exists():
+            audio_path.unlink()
+    except OSError:
+        pass
+
+
 def _format_seconds(seconds: float | None) -> dict | None:
     if seconds is None:
         return None
@@ -439,6 +451,11 @@ def _estimate_from_benchmark(
 
 
 def _benchmark_worker(voice: str | None, instruct: str) -> dict:
+    warmup_start = time.perf_counter()
+    warmup_filename = service.synthesize_text(BENCHMARK_WARMUP_TEXT, voice, instruct=instruct)
+    warmup_elapsed = time.perf_counter() - warmup_start
+    _delete_generated_audio(warmup_filename)
+
     start = time.perf_counter()
     filename = service.synthesize_text(BENCHMARK_TEXT, voice, instruct=instruct)
     elapsed = time.perf_counter() - start
@@ -450,6 +467,10 @@ def _benchmark_worker(voice: str | None, instruct: str) -> dict:
         "backend": _selected_backend(),
         "model_default": MODEL_DEFAULT,
         "benchmark_text": BENCHMARK_TEXT,
+        "benchmark_language": "zh",
+        "warmup_text": BENCHMARK_WARMUP_TEXT,
+        "warmup_seconds": warmup_elapsed,
+        "warmup_excluded": True,
         "voice": voice,
         "char_count": char_count,
         "chunk_count": chunk_count,
