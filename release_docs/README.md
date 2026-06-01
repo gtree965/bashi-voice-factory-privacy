@@ -102,13 +102,12 @@ The table below shows **actually measured** numbers from author hardware. The bu
 | AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 s | ~5-10 min | ✓ Tested |
 | Intel N305 laptop + UHD iGPU | GGUF + Vulkan / DirectML | 53 s | 25-46 min | ✓ Tested 2026-05-25 |
 | Intel N100 mini-PC + UHD iGPU | GGUF + Vulkan / DirectML | 126 s | 58 min - 1h49 min | ✓ Tested 2026-05-25 |
-| NVIDIA A10 (cloud) | GGUF + CUDA (after upgrade) | __ s | __ | ✓ Tested 2026-05 (cloud) |
-| NVIDIA A10 (cloud, before upgrade) | GGUF + Vulkan fallback | __ s | __ | ✓ Tested 2026-05 (cloud) |
+| NVIDIA RTX / GTX (desktop) | GGUF + CUDA (one-click in-app upgrade) | community reports welcome | community reports welcome | awaiting desktop tester reports via GitHub Issues |
 | Apple Silicon / Intel Arc | — | not yet measured | not yet measured | not validated yet |
 
 > ⚠️ **Entry-level CPUs (Intel N100 / N305 class) are only practical for short text — under ~200 characters per generation.** A 5,000-character essay would take 2-9 hours on these boxes. For long-form audio (lectures, audiobooks), please use discrete-GPU hardware (AMD RX 500/600/9000 series, NVIDIA RTX class).
 
-> ℹ️ **NVIDIA users**: the default path is GGUF + Vulkan (NVIDIA cards support Vulkan via the proprietary driver). For native CUDA acceleration, click the one-click in-app upgrade banner (v0.1.1+) — it downloads a ~595 MB CUDA runtime add-on, no manual weight setup required. The same A10 card measured roughly __× faster on CUDA than on the Vulkan fallback. Desktop RTX numbers welcome via GitHub Issues.
+> ℹ️ **NVIDIA users (desktop RTX / GTX)**: the default path is GGUF + Vulkan (NVIDIA cards support Vulkan via the proprietary driver). For native CUDA acceleration, click the one-click in-app upgrade banner (v0.1.1+) — it downloads a ~595 MB CUDA runtime add-on, no manual weight setup required. **Requires NVIDIA driver ≥ 545.x for the CUDA 12.4 runtime.** Measured token/sec numbers from desktop RTX/GTX testers welcome via [GitHub Issues](https://github.com/gtree965/bashi-voice-factory-privacy/issues). Cloud datacenter NVIDIA cards (A10/A100/T4) running in TCC mode have additional setup steps — see Troubleshooting below.
 
 ### 🧩 Hardware Coverage Matrix
 
@@ -116,8 +115,9 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 | Hardware class | Acceleration path used | Status |
 |---|---|---|
-| NVIDIA RTX 30 / 40 / 50 | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ CUDA flow verified on cloud A10 (v0.1.1); desktop RTX numbers welcome via Issues |
-| NVIDIA GTX 10 / 16 | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ Same flow; CUDA needs driver ≥ 550.x, else Vulkan fallback |
+| NVIDIA RTX 30 / 40 / 50 (desktop) | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ Build verified (download + extract + DLL load); desktop tester measured speeds welcome via Issues. CUDA add-on requires driver ≥ 545.x. |
+| NVIDIA GTX 10 / 16 (desktop) | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ Same flow, same driver requirement. |
+| NVIDIA datacenter (A10 / A100 / T4) | Manual setup required | ⚠️ TCC mode + old cloud driver = manual workaround. See Troubleshooting. |
 | AMD RX 500 / 600 / 7000 / 9000 (discrete) | GGUF + Vulkan + DirectML | ✅ Tested (RX 590, RX 9060 XT) |
 | Intel Arc A-series (A380 / A580 / A750 / A770) | GGUF + Vulkan + DirectML | ✅ Should work — not yet measured |
 | Intel iGPU (UHD / Iris Xe / Arc iGPU) | GGUF + Vulkan + DirectML | ✅ Tested (Intel N305 UHD) |
@@ -128,7 +128,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 ### ⚙️ Known Limitations (roadmap)
 
-- **NVIDIA CUDA is opt-in, not bundled.** By default NVIDIA cards use the Vulkan path; native CUDA acceleration requires the one-click in-app upgrade (~595 MB add-on, v0.1.1+). This keeps the main download small for the AMD / Intel / CPU majority. Requires NVIDIA driver ≥ 550.x.
+- **NVIDIA CUDA is opt-in, not bundled.** By default NVIDIA cards use the Vulkan path; native CUDA acceleration requires the one-click in-app upgrade (~595 MB add-on, v0.1.1+). This keeps the main download small for the AMD / Intel / CPU majority. Requires NVIDIA driver ≥ 545.x.
 - **Weak iGPU may be slower than pure CPU.** On Intel N100-class hardware, DirectML / Vulkan transfer + scheduling overhead can outweigh GPU benefit. A/B test by launching from a cmd window after `set GGUF_LLM_USE_GPU=0 && set GGUF_ONNX_PROVIDER=CPU` — feedback on real speed numbers welcome.
 - **NPU acceleration is not yet used** (Snapdragon X Elite, Intel Lunar Lake AI Boost, AMD Ryzen AI 300). Under investigation for v0.2+.
 - **ARM64 Windows is not natively supported** (Surface Pro 11, Galaxy Book4 Edge, etc.). x64 emulation works but is slow. Native ARM64 build is a v0.3+ candidate.
@@ -145,6 +145,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
 | App exits with "No usable backend was found" | Check `launch_log.txt` — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
 | STT download says "镜像失败" | Should not happen in v0.1.0 final — old behavior from removed ModelScope path |
+| Cloud / datacenter NVIDIA GPU (A10 / A100 / T4 on Chinese cloud Windows images): `access violation reading 0x0000000000000000` or `GGUF probe failed` | Datacenter NVIDIA GPUs typically run in **TCC mode** (Vulkan/DirectML disabled) with older drivers (~538.x) incompatible with the CUDA 12.4 add-on. **Desktop RTX/GTX cards are NOT affected** (they run WDDM mode by default with modern drivers). Cloud workaround for v0.1.1: (1) rename `vulkan_backend_spike\Qwen3-TTS-GGUF\qwen3_tts_gguf\inference\bin\ggml-vulkan.dll` to `.disabled` to avoid Vulkan ICD crash; (2) edit `bashi-privacy-app\run_portable.ps1` and add `$env:USE_GGUF_BACKEND = "1"` + `$env:GGUF_ONNX_PROVIDER = "CPU"` after the `Remove-Item Env:USE_GGUF_BACKEND` lines (~line 270) to bypass the probe-ladder env scrub; (3) pre-install CUDA add-on via CLI `python download_cuda_runtime.py`. Requires NVIDIA driver ≥ 545.x for CUDA 12.4 — older cloud drivers won't work and you'll see CUDA init crash. v0.1.2 will auto-detect this scenario and apply the workaround. |
 
 Full log path: `bashi-privacy-app\launch_log.txt`
 

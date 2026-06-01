@@ -102,13 +102,12 @@
 | AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 秒 | 约 5-10 分钟 | ✓ 实测 |
 | Intel N305 笔记本 + UHD 集显 | GGUF + Vulkan / DirectML | 53 秒 | 25-46 分钟 | ✓ 2026-05-25 实测 |
 | Intel N100 迷你主机 + UHD 集显 | GGUF + Vulkan / DirectML | 126 秒 | 58 分钟 - 1 小时 49 分 | ✓ 2026-05-25 实测 |
-| NVIDIA A10（云端） | GGUF + CUDA（升级后） | __ 秒 | __ | ✓ 2026-05 云端实测 |
-| NVIDIA A10（云端，升级前） | GGUF + Vulkan 回退 | __ 秒 | __ | ✓ 2026-05 云端实测 |
+| NVIDIA RTX / GTX（桌面） | GGUF + CUDA（一键应用内升级） | 待社区报数 | 待社区报数 | 等待桌面 tester 通过 GitHub Issues 报数 |
 | Apple Silicon / Intel Arc | — | 暂未实测 | 暂未实测 | 尚未验证 |
 
 > ⚠️ **入门级 CPU（Intel N100 / N305 一类）仅适合短句试用 — 单次生成建议不超过 200 字。** 这类机器跑 5,000 字长文需要 2-9 小时。如果想做长文音频（讲座、有声书），请用独立显卡硬件（AMD RX 500/600/9000 系、NVIDIA RTX 类）。
 
-> ℹ️ **NVIDIA 用户**：默认路线是 GGUF + Vulkan（NVIDIA 驱动支持 Vulkan）。想要原生 CUDA 加速，点击应用内一键升级横幅（v0.1.1+）— 会下载 ~595 MB CUDA 运行时附加包，无需手动配置权重。同一张 A10 卡 CUDA 比 Vulkan 回退约快 __ 倍。欢迎桌面级 RTX 用户在 GitHub Issues 报数。
+> ℹ️ **NVIDIA 用户（桌面 RTX / GTX）**：默认路线是 GGUF + Vulkan（NVIDIA 驱动支持 Vulkan）。想要原生 CUDA 加速，点击应用内一键升级横幅（v0.1.1+）— 会下载 ~595 MB CUDA 运行时附加包，无需手动配置权重。**需要 NVIDIA 驱动 ≥ 545.x 才能使用 CUDA 12.4 运行时。** 桌面 RTX/GTX 用户的实测 token/sec 数字欢迎通过 [GitHub Issues](https://github.com/gtree965/bashi-voice-factory-privacy/issues) 反馈。云端数据中心 NVIDIA 显卡（A10/A100/T4）在 TCC 模式下需要额外设置 — 见下方常见问题排查。
 
 ### 🧩 硬件兼容性矩阵
 
@@ -116,8 +115,9 @@
 
 | 硬件类别 | 实际加速路径 | 状态 |
 |---|---|---|
-| NVIDIA RTX 30 / 40 / 50 | GGUF + CUDA（可选应用内升级）· 默认 Vulkan | ✅ CUDA 流程云端 A10 已验证（v0.1.1）；欢迎桌面 RTX 在 Issues 报数 |
-| NVIDIA GTX 10 / 16 | GGUF + CUDA（可选应用内升级）· 默认 Vulkan | ✅ 同一流程；CUDA 需驱动 ≥ 550.x，否则回退 Vulkan |
+| NVIDIA RTX 30 / 40 / 50（桌面） | GGUF + CUDA（可选应用内升级）· 默认 Vulkan | ✅ 构建已验证（下载 + 解压 + DLL 加载流程）；欢迎桌面 tester 通过 Issues 报实测速度。CUDA add-on 需驱动 ≥ 545.x。 |
+| NVIDIA GTX 10 / 16（桌面） | GGUF + CUDA（可选应用内升级）· 默认 Vulkan | ✅ 同一流程，同样驱动要求。 |
+| NVIDIA 数据中心卡（A10 / A100 / T4） | 需要手动配置 | ⚠️ TCC 模式 + 云端老驱动 = 需要手动 workaround。见常见问题排查。 |
 | AMD RX 500 / 600 / 7000 / 9000（独立显卡） | GGUF + Vulkan + DirectML | ✅ 实测（RX 590、RX 9060 XT） |
 | Intel Arc A 系列（A380 / A580 / A750 / A770） | GGUF + Vulkan + DirectML | ✅ 理论可用、未实测 |
 | Intel 集显（UHD / Iris Xe / Arc iGPU） | GGUF + Vulkan + DirectML | ✅ 实测（Intel N305 UHD） |
@@ -128,7 +128,7 @@
 
 ### ⚙️ 已知限制（路线图）
 
-- **NVIDIA CUDA 为可选项，不内置。** NVIDIA 显卡默认走 Vulkan 路线；原生 CUDA 加速需点击应用内一键升级（~595 MB 附加包，v0.1.1+）。这样主下载包对 AMD / Intel / CPU 大多数用户保持精简。需 NVIDIA 驱动 ≥ 550.x。
+- **NVIDIA CUDA 为可选项，不内置。** NVIDIA 显卡默认走 Vulkan 路线；原生 CUDA 加速需点击应用内一键升级（~595 MB 附加包，v0.1.1+）。这样主下载包对 AMD / Intel / CPU 大多数用户保持精简。需 NVIDIA 驱动 ≥ 545.x。
 - **弱集显可能比纯 CPU 还慢。** Intel N100 类硬件上，DirectML / Vulkan 的数据传输与调度开销可能盖过 GPU 收益。可在 cmd 窗口里 `set GGUF_LLM_USE_GPU=0 && set GGUF_ONNX_PROVIDER=CPU` 后再启动来 A/B 测试，欢迎反馈实测数字。
 - **NPU 加速尚未利用**（Snapdragon X Elite、Intel Lunar Lake AI Boost、AMD Ryzen AI 300）。v0.2+ 调研中。
 - **ARM64 Windows 暂未原生支持**（Surface Pro 11、Galaxy Book4 Edge 等）。x64 仿真能跑但速度受限。原生 ARM64 构建是 v0.3+ 候选。
@@ -145,6 +145,7 @@
 | GGUF 下载中断 | 同样自动重试，且支持 HTTP Range 续传，重新运行启动器从 `.part` 文件续传 |
 | 启动报 "No usable backend was found" | 查 `launch_log.txt`。常见原因：GGUF 运行 DLL 缺失、显卡驱动过旧、可用内存 <8 GB。程序会打印中英双语提示告知具体原因 |
 | STT 下载闪过 "镜像失败" | v0.1.0 正式版不会出现 — 是旧版残留的 ModelScope 路径，已删除 |
+| 云端 / 数据中心 NVIDIA 显卡（A10 / A100 / T4，国内云 Windows 镜像）：`access violation reading 0x0000000000000000` 或 `GGUF probe failed` | 数据中心 NVIDIA 显卡通常运行在 **TCC 模式**（Vulkan/DirectML 被屏蔽），且驱动版本较旧（~538.x）跟 CUDA 12.4 add-on 不兼容。**桌面 RTX/GTX 显卡不受影响**（默认 WDDM 模式 + 现代驱动）。v0.1.1 云端 workaround：(1) 把 `vulkan_backend_spike\Qwen3-TTS-GGUF\qwen3_tts_gguf\inference\bin\ggml-vulkan.dll` 重命名为 `.disabled` 以避免 Vulkan ICD 崩溃；(2) 编辑 `bashi-privacy-app\run_portable.ps1`，在 `Remove-Item Env:USE_GGUF_BACKEND` 行（约第 270 行）之后加上 `$env:USE_GGUF_BACKEND = "1"` + `$env:GGUF_ONNX_PROVIDER = "CPU"` 绕开 probe 阶梯的 env scrub；(3) 命令行预装 CUDA add-on：`python download_cuda_runtime.py`。CUDA 12.4 需要 NVIDIA 驱动 ≥ 545.x — 老的云端驱动跑不起来会撞 CUDA init 崩溃。v0.1.2 会自动检测此场景并自动应用 workaround。 |
 
 完整日志路径：`bashi-privacy-app\launch_log.txt`
 
