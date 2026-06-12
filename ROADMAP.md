@@ -140,10 +140,11 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 - **Defense-in-depth executable lookup**: try `nvidia-smi` on `PATH`, the System32 location, the legacy NVIDIA NVSMI location, and the `%ProgramFiles%`-expanded NVSMI location. If all attempts fail, keep the existing WMI behavior. Stop after the first timeout instead of waiting on equivalent paths, and suppress child console windows.
 - **Correct post-upgrade backend label**: on Windows NVIDIA systems, an installed `ggml-cuda.dll` reports `GGUF + CUDA` without relying on `torch.cuda.is_available()`, because the shipped PyTorch wheel is CPU-only and cannot describe the independent GGUF CUDA runtime.
 - **Regression fixture**: use the real `NVIDIA GeForce RTX 5070` output measured on 海马云 HMv Cloud PC; verify non-NVIDIA and no-driver systems still fall back to WMI.
+- **Native startup-probe isolation**: run each real backend probe in a child Python process with a 300-second hard timeout. Native access violations and hung GPU initialization now become actionable failed-probe results so the selector can continue its fallback ladder instead of crashing the launcher process.
 
 ### Remaining backlog
 
-- Wrap native backend probe / kernel initialization failures so access violations become actionable fallback errors.
+- Extend native-crash isolation into the selected runtime's lazy first-use initialization and add an explicit CUDA → Vulkan → CPU subpath fallback. The current child-process boundary protects startup preflight probes.
 - Detect TCC mode and incompatible NVIDIA driver versions before initializing Vulkan, DirectML, or CUDA.
 - Recognize a GGUF installation with `ggml-cuda.dll` even when Vulkan is intentionally disabled.
 - Preserve legitimate `USE_GGUF_BACKEND` overrides and add a launcher-level Vulkan-disable switch.

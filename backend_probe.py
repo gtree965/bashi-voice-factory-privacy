@@ -35,6 +35,8 @@ USE_GGUF_ENV = "USE_GGUF_BACKEND"
 USE_PYTORCH_ENV = "USE_PYTORCH_BACKEND"
 PROBE_TEXT = "你好。"
 PROBE_VOICE_ID = "uncle_fu"
+PROBE_SUBPROCESS_TIMEOUT_SECONDS = 300
+PROBE_RESULT_PREFIX = "BASHI_PROBE_RESULT="
 MODEL_DEFAULT = "Qwen3-TTS-12Hz-1.7B-CustomVoice"
 
 
@@ -485,12 +487,90 @@ def detect_gguf_accelerator(
     return "cpu"
 
 
-def dispatch_real_probe(backend: BackendName) -> ProbeOutcome:
+def _probe_backend_direct(backend: BackendName) -> ProbeOutcome:
     if backend == "gguf":
         return probe_gguf_backend()
     if backend == "pytorch":
         return probe_pytorch_backend()
     raise ValueError(f"Unsupported backend: {backend}")
+
+
+def _probe_output_tail(stdout: str | None, stderr: str | None, max_chars: int = 1200) -> str:
+    combined = "\n".join(part for part in (stdout, stderr) if part)
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+    return " | ".join(lines)[-max_chars:]
+
+
+def _format_native_exit_code(returncode: int) -> str:
+    if platform.system().lower() == "windows":
+        return f"0x{returncode & 0xFFFFFFFF:08X}"
+    return str(returncode)
+
+
+def _run_isolated_probe(
+    backend: BackendName,
+    timeout_seconds: int = PROBE_SUBPROCESS_TIMEOUT_SECONDS,
+) -> ProbeOutcome:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--probe-child",
+        "--backend",
+        backend,
+    ]
+    child_env = dict(os.environ)
+    child_env["PYTHONUTF8"] = "1"
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=timeout_seconds,
+            env=child_env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        return ProbeOutcome(
+            False,
+            f"{backend.upper()} probe timed out after {timeout_seconds}s; "
+            "the native runtime may be hung during GPU initialization.",
+        )
+    except Exception as exc:
+        return ProbeOutcome(False, f"{backend.upper()} probe subprocess failed to start: {exc}")
+
+    for line in reversed(result.stdout.splitlines()):
+        if not line.startswith(PROBE_RESULT_PREFIX):
+            continue
+        try:
+            payload = json.loads(line[len(PROBE_RESULT_PREFIX) :])
+            return ProbeOutcome(bool(payload["success"]), str(payload["reason"]))
+        except Exception as exc:
+            return ProbeOutcome(
+                False,
+                f"{backend.upper()} probe subprocess returned an invalid result: {exc}",
+            )
+
+    exit_code = _format_native_exit_code(result.returncode)
+    detail = (
+        f"{backend.upper()} probe subprocess exited without a result "
+        f"(exit code {exit_code})."
+    )
+    if result.returncode != 0:
+        detail += (
+            " This usually indicates a native CUDA/Vulkan/DirectML initialization "
+            "crash or an incompatible GPU driver."
+        )
+    output_tail = _probe_output_tail(result.stdout, result.stderr)
+    if output_tail:
+        detail += f" Output tail: {output_tail}"
+    return ProbeOutcome(False, detail)
+
+
+def dispatch_real_probe(backend: BackendName) -> ProbeOutcome:
+    """Run startup probes out-of-process so native crashes remain recoverable."""
+    return _run_isolated_probe(backend)
 
 
 def bootstrap_backend_selection(
@@ -690,6 +770,11 @@ def _cli() -> int:
         help="Execute minimal real inference probes for one or more backends.",
     )
     parser.add_argument(
+        "--probe-child",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--backend",
         action="append",
         choices=["gguf", "pytorch"],
@@ -706,6 +791,19 @@ def _cli() -> int:
         help="Voice id used for the probe. Default: uncle_fu",
     )
     args = parser.parse_args()
+
+    if args.probe_child:
+        if not args.backend or len(args.backend) != 1:
+            parser.error("--probe-child requires exactly one --backend")
+        outcome = _probe_backend_direct(args.backend[0])
+        print(
+            PROBE_RESULT_PREFIX
+            + json.dumps(
+                {"success": outcome.success, "reason": outcome.reason},
+                ensure_ascii=False,
+            )
+        )
+        return 0 if outcome.success else 1
 
     if not args.run_real_probes:
         parser.print_help()
