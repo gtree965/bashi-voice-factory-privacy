@@ -269,7 +269,52 @@ def detect_version_profile() -> VersionProfile:
     )
 
 
-def _detect_windows_gpu_name() -> str:
+def _detect_nvidia_gpu_name(env: Mapping[str, str] | None = None) -> str:
+    env = env if env is not None else os.environ
+    candidates = [
+        "nvidia-smi",
+        r"C:\Windows\System32\nvidia-smi.exe",
+        r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+    ]
+    program_files = env.get("ProgramFiles") or env.get("PROGRAMFILES")
+    if program_files:
+        expanded = (
+            program_files.rstrip("\\/")
+            + r"\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+        )
+        if expanded.lower() not in {candidate.lower() for candidate in candidates}:
+            candidates.append(expanded)
+
+    query_args = ["--query-gpu=name", "--format=csv,noheader"]
+    for executable in candidates:
+        try:
+            result = subprocess.run(
+                [executable, *query_args],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except subprocess.TimeoutExpired:
+            return "unknown"
+        except Exception:
+            continue
+
+        if result.returncode != 0:
+            continue
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if lines:
+            return lines[0]
+
+    return "unknown"
+
+
+def _detect_windows_gpu_name(env: Mapping[str, str] | None = None) -> str:
+    nvidia_name = _detect_nvidia_gpu_name(env)
+    if nvidia_name != "unknown":
+        return nvidia_name
+
     command = [
         "powershell",
         "-NoProfile",
@@ -427,7 +472,13 @@ def detect_gguf_accelerator(
     has_cuda_dll = (gguf_bin / "ggml-cuda.dll").exists()
     has_vulkan_dll = (gguf_bin / "ggml-vulkan.dll").exists()
 
-    if has_cuda_dll and hardware.normalized_vendor == "nvidia" and hardware.has_cuda:
+    # The shipped Windows PyTorch wheel is CPU-only, so torch.cuda.is_available()
+    # cannot confirm the CUDA driver used by the independent GGUF runtime.
+    if (
+        has_cuda_dll
+        and hardware.normalized_vendor == "nvidia"
+        and (hardware.normalized_os == "windows" or hardware.has_cuda)
+    ):
         return "cuda"
     if has_vulkan_dll and hardware.has_vulkan:
         return "vulkan"

@@ -9,6 +9,7 @@
 |---|---|---|---|
 | **v0.1.0** | Windows initial release | Released 2026-05 | shipped |
 | **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Planned | ~1-2 weeks after v0.1.0 |
+| **v0.1.2** | NVIDIA detection and backend robustness (Windows) | In progress | after v0.1.1 field feedback |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -126,6 +127,27 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 ### Effort estimate
 
 **~1 week calendar** (recalibrated, down from 1-2). Working-copy progress: backend reporting (Step 5), download infrastructure (Step 6), CPU-only launcher (Step 9) already implemented. Remaining: ModelScope upload (Step 4, ~½ day), NVIDIA end-to-end verification (Step 7, gated on test hardware), README + release notes (Step 8, ~½ day).
+
+---
+
+## v0.1.2 — NVIDIA detection and backend robustness (Windows patch)
+
+**Goal**: make NVIDIA detection and backend startup reliable on consumer cloud PCs, remote-display setups, and datacenter cards without regressing AMD / Intel / CPU-only users.
+
+### Work started 2026-06-12
+
+- **NVIDIA vendor detection fix**: query `nvidia-smi --query-gpu=name --format=csv,noheader` before `Win32_VideoController`, because virtual display layers can make WMI report names such as `HMvMonitorCloudPC Device` instead of the physical GPU.
+- **Defense-in-depth executable lookup**: try `nvidia-smi` on `PATH`, the System32 location, the legacy NVIDIA NVSMI location, and the `%ProgramFiles%`-expanded NVSMI location. If all attempts fail, keep the existing WMI behavior. Stop after the first timeout instead of waiting on equivalent paths, and suppress child console windows.
+- **Correct post-upgrade backend label**: on Windows NVIDIA systems, an installed `ggml-cuda.dll` reports `GGUF + CUDA` without relying on `torch.cuda.is_available()`, because the shipped PyTorch wheel is CPU-only and cannot describe the independent GGUF CUDA runtime.
+- **Regression fixture**: use the real `NVIDIA GeForce RTX 5070` output measured on 海马云 HMv Cloud PC; verify non-NVIDIA and no-driver systems still fall back to WMI.
+
+### Remaining backlog
+
+- Wrap native backend probe / kernel initialization failures so access violations become actionable fallback errors.
+- Detect TCC mode and incompatible NVIDIA driver versions before initializing Vulkan, DirectML, or CUDA.
+- Recognize a GGUF installation with `ggml-cuda.dll` even when Vulkan is intentionally disabled.
+- Preserve legitimate `USE_GGUF_BACKEND` overrides and add a launcher-level Vulkan-disable switch.
+- Bundle the small first-launch pip wheel to reduce bootstrap failure risk.
 
 ---
 
