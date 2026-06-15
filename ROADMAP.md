@@ -8,8 +8,8 @@
 | Version | Theme | Status | Target |
 |---|---|---|---|
 | **v0.1.0** | Windows initial release | Released 2026-05 | shipped |
-| **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Planned | ~1-2 weeks after v0.1.0 |
-| **v0.1.2** | NVIDIA detection and backend robustness (Windows) | In progress | after v0.1.1 field feedback |
+| **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Released 2026-06 | shipped |
+| **v0.1.2** | NVIDIA detection and backend robustness (Windows) | Released 2026-06-15 | shipped |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -130,11 +130,11 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 
 ---
 
-## v0.1.2 — NVIDIA detection and backend robustness (Windows patch)
+## v0.1.2 — NVIDIA detection and backend robustness (Windows patch, shipped 2026-06-15)
 
-**Goal**: make NVIDIA detection and backend startup reliable on consumer cloud PCs, remote-display setups, and datacenter cards without regressing AMD / Intel / CPU-only users.
+**Goal**: make NVIDIA detection reliable on consumer cloud PCs and remote-display setups, while isolating native startup-probe crashes into actionable errors without regressing AMD / Intel / CPU-only users.
 
-### Work started 2026-06-12
+### Shipped scope
 
 - **NVIDIA vendor detection fix**: query `nvidia-smi --query-gpu=name --format=csv,noheader` before `Win32_VideoController`, because virtual display layers can make WMI report names such as `HMvMonitorCloudPC Device` instead of the physical GPU.
 - **Defense-in-depth executable lookup**: try `nvidia-smi` on `PATH`, the System32 location, the legacy NVIDIA NVSMI location, and the `%ProgramFiles%`-expanded NVSMI location. If all attempts fail, keep the existing WMI behavior. Stop after the first timeout instead of waiting on equivalent paths, and suppress child console windows.
@@ -142,7 +142,7 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 - **Regression fixture**: use the real `NVIDIA GeForce RTX 5070` output measured on 海马云 HMv Cloud PC; verify non-NVIDIA and no-driver systems still fall back to WMI.
 - **Native startup-probe isolation**: run each real backend probe in a child Python process with a 300-second hard timeout. Native access violations and hung GPU initialization now become actionable failed-probe results so the selector can continue its fallback ladder instead of crashing the launcher process.
 
-### Remaining backlog
+### Remaining backlog for later patches
 
 - Extend native-crash isolation into the selected runtime's lazy first-use initialization and add an explicit CUDA → Vulkan → CPU subpath fallback. The current child-process boundary protects startup preflight probes.
 - Detect TCC mode and incompatible NVIDIA driver versions before initializing Vulkan, DirectML, or CUDA.
@@ -305,4 +305,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-05-26 (incorporated technical review — see "Review history" near the top). Next review: after v0.1.1 ships.*
+*Last updated: 2026-06-15 (v0.1.2 NVIDIA detection and startup-probe robustness release). Next review: before the next Windows patch or v0.2 cross-platform work.*

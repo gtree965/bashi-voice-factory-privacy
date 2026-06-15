@@ -3,11 +3,11 @@
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**Version:** 0.1.1
+**Version:** 0.1.2
 
 A fully offline desktop web app for high-quality text-to-speech and speech-to-text. After the one-time first-launch download, **everything runs on your own machine** — TTS synthesis, audio export, transcription, and storage. No audio data ever leaves your computer.
 
@@ -31,6 +31,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 ### 🎯 Automatic Backend Selection
 - **GGUF + Vulkan** for AMD / Intel / iGPU users (default, fast, RAM-friendly).
 - **GGUF + CUDA** for NVIDIA users via a one-click in-app upgrade (optional ~595 MB add-on download; no manual weight setup). New in v0.1.1.
+- **Reliable NVIDIA detection and startup probes**: v0.1.2 detects the physical NVIDIA GPU through virtual-display layers and isolates native probe crashes so the launcher can report an actionable error instead of disappearing.
 - **CPU fallback** for entry-level hardware (works on Intel N100-class boxes).
 - One-click **speed test** calibrates ETA estimates to your specific machine.
 
@@ -102,12 +103,13 @@ The table below shows **actually measured** numbers from author hardware. The bu
 | AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 s | ~5-10 min | ✓ Tested |
 | Intel N305 laptop + UHD iGPU | GGUF + Vulkan / DirectML | 53 s | 25-46 min | ✓ Tested 2026-05-25 |
 | Intel N100 mini-PC + UHD iGPU | GGUF + Vulkan / DirectML | 126 s | 58 min - 1h49 min | ✓ Tested 2026-05-25 |
-| NVIDIA RTX / GTX (desktop) | GGUF + CUDA (one-click in-app upgrade) | community reports welcome | community reports welcome | awaiting desktop tester reports via GitHub Issues |
+| NVIDIA RTX 5070 (12 GB, cloud PC) | GGUF + Vulkan + DirectML | ~1 s | 41 s - 1 m 17 s | ✓ Tested 2026-06-12 (海马云 HMv Cloud PC, Vulkan path) |
+| Other NVIDIA RTX / GTX (desktop) | GGUF + Vulkan + DirectML · optional CUDA add-on | community reports welcome | community reports welcome | awaiting desktop tester reports via GitHub Issues |
 | Apple Silicon / Intel Arc | — | not yet measured | not yet measured | not validated yet |
 
 > ⚠️ **Entry-level CPUs (Intel N100 / N305 class) are only practical for short text — under ~200 characters per generation.** A 5,000-character essay would take 2-9 hours on these boxes. For long-form audio (lectures, audiobooks), please use discrete-GPU hardware (AMD RX 500/600/9000 series, NVIDIA RTX class).
 
-> ℹ️ **NVIDIA users (desktop RTX / GTX)**: the default path is GGUF + Vulkan (NVIDIA cards support Vulkan via the proprietary driver). For native CUDA acceleration, click the one-click in-app upgrade banner (v0.1.1+) — it downloads a ~595 MB CUDA runtime add-on, no manual weight setup required. **Requires NVIDIA driver ≥ 545.x for the CUDA 12.4 runtime.** Measured token/sec numbers from desktop RTX/GTX testers welcome via [GitHub Issues](https://github.com/gtree965/bashi-voice-factory-privacy/issues). Cloud datacenter NVIDIA cards (A10/A100/T4) running in TCC mode have additional setup steps — see Troubleshooting below.
+> ℹ️ **NVIDIA users (desktop RTX / GTX)**: the default path is GGUF + Vulkan (NVIDIA cards support Vulkan via the proprietary driver). For native CUDA acceleration, click the one-click in-app upgrade banner (v0.1.1+) — it downloads a ~595 MB CUDA runtime add-on, no manual weight setup required. **Requires NVIDIA driver ≥ 545.x for the CUDA 12.4 runtime.** Vulkan path measured on RTX 5070 (cloud PC): **1 s for the 25-char probe**, so the default Vulkan experience is already excellent on a desktop NVIDIA card. CUDA add-on A/B numbers + reports from other RTX/GTX cards welcome via [GitHub Issues](https://github.com/gtree965/bashi-voice-factory-privacy/issues). Cloud datacenter NVIDIA cards (A10/A100/T4) running in TCC mode have additional setup steps — see Troubleshooting below.
 
 ### 🧩 Hardware Coverage Matrix
 
@@ -115,8 +117,8 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 | Hardware class | Acceleration path used | Status |
 |---|---|---|
-| NVIDIA RTX 30 / 40 / 50 (desktop) | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ Build verified (download + extract + DLL load); desktop tester measured speeds welcome via Issues. CUDA add-on requires driver ≥ 545.x. |
-| NVIDIA GTX 10 / 16 (desktop) | GGUF + CUDA (optional in-app upgrade) · Vulkan default | ✅ Same flow, same driver requirement. |
+| NVIDIA RTX 30 / 40 / 50 (desktop) | GGUF + Vulkan default · optional CUDA in-app upgrade | ✅ RTX 5070 measured 2026-06-12: ~1 s for 25-char probe on Vulkan path (cloud PC, 海马云). CUDA add-on A/B numbers + other-card reports welcome via Issues. CUDA add-on requires driver ≥ 545.x. |
+| NVIDIA GTX 10 / 16 (desktop) | GGUF + Vulkan default · optional CUDA in-app upgrade | ✅ Same flow, same driver requirement; reports welcome via Issues. |
 | NVIDIA datacenter (A10 / A100 / T4) | Manual setup required | ⚠️ TCC mode + old cloud driver = manual workaround. See Troubleshooting. |
 | AMD RX 500 / 600 / 7000 / 9000 (discrete) | GGUF + Vulkan + DirectML | ✅ Tested (RX 590, RX 9060 XT) |
 | Intel Arc A-series (A380 / A580 / A750 / A770) | GGUF + Vulkan + DirectML | ✅ Should work — not yet measured |
@@ -145,7 +147,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
 | App exits with "No usable backend was found" | Check `launch_log.txt` — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
 | STT download says "镜像失败" | Should not happen in v0.1.0 final — old behavior from removed ModelScope path |
-| Cloud / datacenter NVIDIA GPU (A10 / A100 / T4 on Chinese cloud Windows images): `access violation reading 0x0000000000000000` or `GGUF probe failed` | Datacenter NVIDIA GPUs typically run in **TCC mode** (Vulkan/DirectML disabled) with older drivers (~538.x) incompatible with the CUDA 12.4 add-on. **Desktop RTX/GTX cards are NOT affected** (they run WDDM mode by default with modern drivers). Cloud workaround for v0.1.1: (1) rename `vulkan_backend_spike\Qwen3-TTS-GGUF\qwen3_tts_gguf\inference\bin\ggml-vulkan.dll` to `.disabled` to avoid Vulkan ICD crash; (2) edit `bashi-privacy-app\run_portable.ps1` and add `$env:USE_GGUF_BACKEND = "1"` + `$env:GGUF_ONNX_PROVIDER = "CPU"` after the `Remove-Item Env:USE_GGUF_BACKEND` lines (~line 270) to bypass the probe-ladder env scrub; (3) pre-install CUDA add-on via CLI `python download_cuda_runtime.py`. Requires NVIDIA driver ≥ 545.x for CUDA 12.4 — older cloud drivers won't work and you'll see CUDA init crash. v0.1.2 will auto-detect this scenario and apply the workaround. |
+| Cloud / datacenter NVIDIA GPU (A10 / A100 / T4 on Chinese cloud Windows images): `access violation reading 0x0000000000000000` or `GGUF probe failed` | Datacenter NVIDIA GPUs typically run in **TCC mode** (Vulkan/DirectML disabled) with older drivers (~538.x) incompatible with the CUDA 12.4 add-on. **Desktop RTX/GTX cards are NOT affected** (they run WDDM mode by default with modern drivers). In v0.1.2, native startup-probe crashes are isolated and reported instead of terminating the launcher, but TCC setup still requires the manual workaround: (1) rename `vulkan_backend_spike\Qwen3-TTS-GGUF\qwen3_tts_gguf\inference\bin\ggml-vulkan.dll` to `.disabled`; (2) edit `bashi-privacy-app\run_portable.ps1` and add `$env:USE_GGUF_BACKEND = "1"` + `$env:GGUF_ONNX_PROVIDER = "CPU"` after the `Remove-Item Env:USE_GGUF_BACKEND` lines (~line 270); (3) pre-install the CUDA add-on via CLI `python download_cuda_runtime.py`. CUDA 12.4 requires NVIDIA driver ≥ 545.x. Automatic TCC handling remains planned for a later patch. |
 
 Full log path: `bashi-privacy-app\launch_log.txt`
 
@@ -154,7 +156,7 @@ Full log path: `bashi-privacy-app\launch_log.txt`
 ## 📦 What's in the Zip
 
 ```
-bashi-voice-factory-privacy-v0.1.1/
+bashi-voice-factory-privacy-v0.1.2/
 ├── Start_启动.bat                                       ← double-click here
 ├── Start_CPU_only_仅CPU启动.bat                         ← force CPU mode (entry-level iGPU A/B)
 ├── README.md                                            ← this file
