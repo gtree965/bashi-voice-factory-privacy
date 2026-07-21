@@ -1,3 +1,4 @@
+import copy
 import os
 import uuid
 import json
@@ -30,6 +31,7 @@ model_manager = ModelManager(MODELS_DIR)
 
 # Global state
 stt_jobs = {}
+stt_jobs_lock = threading.Lock()
 engine_instance = None
 current_engine_model_id = None
 engine_lock = threading.Lock()
@@ -42,10 +44,11 @@ JOB_MAX_AGE_SEC = 24 * 60 * 60
 def cleanup_expired_jobs():
     """Remove jobs older than JOB_MAX_AGE_SEC from memory."""
     now = time.time()
-    expired = [jid for jid, job in stt_jobs.items()
-               if now - job.get("created_at", now) > JOB_MAX_AGE_SEC]
-    for jid in expired:
-        del stt_jobs[jid]
+    with stt_jobs_lock:
+        expired = [jid for jid, job in stt_jobs.items()
+                   if now - job.get("created_at", now) > JOB_MAX_AGE_SEC]
+        for jid in expired:
+            del stt_jobs[jid]
     if expired:
         print(f"[STT] Cleaned up {len(expired)} expired job(s)")
 
@@ -246,9 +249,11 @@ def _write_job_metrics(job_id: str) -> None:
     durable source for post-run Speaker ID analysis.
     """
     try:
-        job = stt_jobs.get(job_id)
-        if not job:
-            return
+        with stt_jobs_lock:
+            job = stt_jobs.get(job_id)
+            if not job:
+                return
+            job = dict(job)
         payload = {
             "job_id": job_id,
             "filename": job.get("filename"),
@@ -284,9 +289,10 @@ def _process_transcription(
     speaker_preset: str | None = None,
 ):
     """Background thread to process audio extraction and transcription."""
-    stt_jobs[job_id]["status"] = "extracting_audio"
-    stt_jobs[job_id].setdefault("timing", {})
-    stt_jobs[job_id].setdefault("speaker_metrics", {})
+    with stt_jobs_lock:
+        stt_jobs[job_id]["status"] = "extracting_audio"
+        stt_jobs[job_id].setdefault("timing", {})
+        stt_jobs[job_id].setdefault("speaker_metrics", {})
     wav_path = UPLOAD_DIR / f"{job_id}.wav"
     job_started_at = time.monotonic()
     
@@ -294,19 +300,25 @@ def _process_transcription(
         # Step 1: Extract Audio
         step_started_at = time.monotonic()
         extract_audio_wav(file_path, wav_path)
-        stt_jobs[job_id]["timing"]["audio_extract_seconds"] = round(time.monotonic() - step_started_at, 3)
+        audio_extract_seconds = round(time.monotonic() - step_started_at, 3)
+        with stt_jobs_lock:
+            stt_jobs[job_id]["timing"]["audio_extract_seconds"] = audio_extract_seconds
         
         # Step 2: Ensure Engine is ready (also increments ref count)
-        stt_jobs[job_id]["status"] = "loading_model"
+        with stt_jobs_lock:
+            stt_jobs[job_id]["status"] = "loading_model"
         step_started_at = time.monotonic()
         engine = acquire_engine(model_id)
         if not engine:
             raise RuntimeError("Engine could not be loaded. Please ensure models are installed.")
-        stt_jobs[job_id]["timing"]["model_load_seconds"] = round(time.monotonic() - step_started_at, 3)
+        model_load_seconds = round(time.monotonic() - step_started_at, 3)
+        with stt_jobs_lock:
+            stt_jobs[job_id]["timing"]["model_load_seconds"] = model_load_seconds
 
         # Step 3: Transcribe
         try:
-            stt_jobs[job_id]["status"] = "transcribing"
+            with stt_jobs_lock:
+                stt_jobs[job_id]["status"] = "transcribing"
             step_started_at = time.monotonic()
             for segment in engine.transcribe_stream(wav_path, language=language):
                 seg_dict = {
@@ -315,23 +327,29 @@ def _process_transcription(
                     "end": segment.end,
                     "text": segment.text
                 }
-                stt_jobs[job_id]["segments"].append(seg_dict)
-            stt_jobs[job_id]["timing"]["asr_seconds"] = round(time.monotonic() - step_started_at, 3)
+                with stt_jobs_lock:
+                    stt_jobs[job_id]["segments"].append(seg_dict)
+            asr_seconds = round(time.monotonic() - step_started_at, 3)
+            with stt_jobs_lock:
+                stt_jobs[job_id]["timing"]["asr_seconds"] = asr_seconds
         finally:
             release_engine()
 
         # Step 4: Optional speaker diarization
         if speaker_id_enabled:
-            stt_jobs[job_id]["status"] = "diarizing"
-            stt_jobs[job_id]["speaker_progress"] = 0.0
+            with stt_jobs_lock:
+                stt_jobs[job_id]["status"] = "diarizing"
+                stt_jobs[job_id]["speaker_progress"] = 0.0
             diarizer = None
             try:
                 def progress_callback(num_processed_chunk: int, num_total_chunks: int) -> int:
                     if num_total_chunks:
-                        stt_jobs[job_id]["speaker_progress"] = round(
+                        speaker_progress = round(
                             (num_processed_chunk / num_total_chunks) * 100,
                             1,
                         )
+                        with stt_jobs_lock:
+                            stt_jobs[job_id]["speaker_progress"] = speaker_progress
                     return 0
 
                 diarizer = SpeakerDiarizer(MODELS_DIR, preset=speaker_preset)
@@ -340,13 +358,19 @@ def _process_transcription(
                     num_speakers=speaker_count,
                     progress_callback=progress_callback,
                 )
-                stt_jobs[job_id]["speaker_metrics"] = diarizer.last_metrics
-                stt_jobs[job_id]["speaker_turns"] = [_speaker_turn_to_dict(turn) for turn in turns]
-                stt_jobs[job_id]["segments"] = assign_speakers_to_segments(
-                    stt_jobs[job_id]["segments"],
+                with stt_jobs_lock:
+                    segments = copy.deepcopy(stt_jobs[job_id]["segments"])
+                speaker_turns = [_speaker_turn_to_dict(turn) for turn in turns]
+                assigned_segments = assign_speakers_to_segments(
+                    segments,
                     turns,
                 )
-                stt_jobs[job_id]["speaker_progress"] = 100.0
+                speaker_metrics = diarizer.last_metrics
+                with stt_jobs_lock:
+                    stt_jobs[job_id]["speaker_metrics"] = speaker_metrics
+                    stt_jobs[job_id]["speaker_turns"] = speaker_turns
+                    stt_jobs[job_id]["segments"] = assigned_segments
+                    stt_jobs[job_id]["speaker_progress"] = 100.0
                 _append_launch_log(
                     "[STT Speaker ID] "
                     f"job={job_id} preset={diarizer.last_metrics.get('preset')} "
@@ -362,30 +386,40 @@ def _process_transcription(
                 # Speaker ID is an optional enhancement.  A diarization failure
                 # must not discard a successful transcript, especially for long
                 # meeting recordings where diarization is the riskiest step.
-                stt_jobs[job_id]["speaker_error"] = str(e)
-                stt_jobs[job_id]["speaker_progress"] = None
+                speaker_error = str(e)
+                speaker_metrics = None
                 if diarizer is not None:
-                    stt_jobs[job_id]["speaker_metrics"] = _dict_or_empty(
-                        getattr(diarizer, "last_metrics", {})
-                    )
+                    speaker_metrics = _dict_or_empty(getattr(diarizer, "last_metrics", {}))
+                with stt_jobs_lock:
+                    stt_jobs[job_id]["speaker_error"] = speaker_error
+                    stt_jobs[job_id]["speaker_progress"] = None
+                    if speaker_metrics is not None:
+                        stt_jobs[job_id]["speaker_metrics"] = speaker_metrics
                 _append_launch_log(f"[STT Speaker ID] job={job_id} failed: {e}")
 
         # Step 5: Done
-        stt_jobs[job_id]["timing"]["total_job_seconds"] = round(time.monotonic() - job_started_at, 3)
-        stt_jobs[job_id]["status"] = "done"
+        total_job_seconds = round(time.monotonic() - job_started_at, 3)
+        with stt_jobs_lock:
+            stt_jobs[job_id]["timing"]["total_job_seconds"] = total_job_seconds
+            stt_jobs[job_id]["status"] = "done"
+            job = stt_jobs[job_id]
+            segment_count = len(job["segments"])
+            timing = dict(job["timing"])
         _write_job_metrics(job_id)
         _append_launch_log(
             "[STT] "
-            f"job={job_id} status=done segments={len(stt_jobs[job_id]['segments'])} "
-            f"extract={stt_jobs[job_id]['timing'].get('audio_extract_seconds')}s "
-            f"load={stt_jobs[job_id]['timing'].get('model_load_seconds')}s "
-            f"asr={stt_jobs[job_id]['timing'].get('asr_seconds')}s "
-            f"total={stt_jobs[job_id]['timing'].get('total_job_seconds')}s"
+            f"job={job_id} status=done segments={segment_count} "
+            f"extract={timing.get('audio_extract_seconds')}s "
+            f"load={timing.get('model_load_seconds')}s "
+            f"asr={timing.get('asr_seconds')}s "
+            f"total={timing.get('total_job_seconds')}s"
         )
         
     except Exception as e:
-        stt_jobs[job_id]["status"] = "error"
-        stt_jobs[job_id]["error"] = str(e)
+        error_message = str(e)
+        with stt_jobs_lock:
+            stt_jobs[job_id]["status"] = "error"
+            stt_jobs[job_id]["error"] = error_message
     finally:
         # Release the job slot so the next transcription can be accepted
         global _job_active
@@ -442,23 +476,25 @@ def transcribe():
         file_path = UPLOAD_DIR / f"{job_id}_{safe_filename}"
         file.save(str(file_path))
 
-        stt_jobs[job_id] = {
-            "job_id": job_id,
-            "filename": file.filename,
-            "model_id": model_id,
-            "status": "pending",
-            "segments": [],
-            "speaker_id_enabled": speaker_id_enabled,
-            "speaker_count": speaker_count,
-            "speaker_preset": speaker_preset,
-            "speaker_turns": [],
-            "speaker_progress": None,
-            "speaker_error": None,
-            "speaker_metrics": {},
-            "timing": {},
-            "error": None,
-            "created_at": time.time(),
-        }
+        created_at = time.time()
+        with stt_jobs_lock:
+            stt_jobs[job_id] = {
+                "job_id": job_id,
+                "filename": file.filename,
+                "model_id": model_id,
+                "status": "pending",
+                "segments": [],
+                "speaker_id_enabled": speaker_id_enabled,
+                "speaker_count": speaker_count,
+                "speaker_preset": speaker_preset,
+                "speaker_turns": [],
+                "speaker_progress": None,
+                "speaker_error": None,
+                "speaker_metrics": {},
+                "timing": {},
+                "error": None,
+                "created_at": created_at,
+            }
 
         # Start background processing (_job_active is cleared in the worker's finally)
         thread = threading.Thread(
@@ -485,7 +521,8 @@ def transcribe():
             with engine_lock:
                 _job_active = False
             if job_id is not None:
-                stt_jobs.pop(job_id, None)
+                with stt_jobs_lock:
+                    stt_jobs.pop(job_id, None)
             if file_path is not None and file_path.exists():
                 file_path.unlink(missing_ok=True)
 
@@ -494,30 +531,34 @@ def get_progress_sse(job_id):
     def generate():
         last_index = 0
         while True:
-            job = stt_jobs.get(job_id)
+            with stt_jobs_lock:
+                job = stt_jobs.get(job_id)
+                if job:
+                    status = job["status"]
+                    new_segments = job["segments"][last_index:]
+                    error = job.get("error")
+                    speaker_progress = job.get("speaker_progress")
+                    speaker_error = job.get("speaker_error")
+                    seg_total = len(job["segments"])
             if not job:
                 yield f"data: {json.dumps({'status': 'error', 'error': 'job not found'})}\n\n"
                 break
 
-            status = job["status"]
-            segments = job["segments"]
-
             # Send new segments only
-            new_segments = segments[last_index:]
             if new_segments or status in ["error", "done", "extracting_audio", "loading_model", "diarizing"]:
                 event_data = {
                     "status": status,
                     "new_segments": new_segments
                 }
-                if job.get("error"):
-                    event_data["error"] = job["error"]
-                if job.get("speaker_progress") is not None:
-                    event_data["speaker_progress"] = job["speaker_progress"]
-                if job.get("speaker_error"):
-                    event_data["speaker_error"] = job["speaker_error"]
+                if error:
+                    event_data["error"] = error
+                if speaker_progress is not None:
+                    event_data["speaker_progress"] = speaker_progress
+                if speaker_error:
+                    event_data["speaker_error"] = speaker_error
                     
                 yield f"data: {json.dumps(event_data)}\n\n"
-                last_index = len(segments)
+                last_index = seg_total
                 
             if status in ["done", "error"]:
                 break
@@ -528,10 +569,13 @@ def get_progress_sse(job_id):
 
 @stt_bp.route("/result/<job_id>", methods=["GET"])
 def get_result(job_id):
-    job = stt_jobs.get(job_id)
+    with stt_jobs_lock:
+        job = stt_jobs.get(job_id)
+        if job:
+            payload = copy.deepcopy(job)
     if not job:
         return jsonify({"error": "Job not found"}), 404
-    return jsonify(job)
+    return jsonify(payload)
 
 def format_timestamp(seconds: float, separator: str = ",") -> str:
     """Format seconds into HH:MM:SS,mmm or HH:MM:SS.mmm"""
@@ -768,7 +812,10 @@ def fix_timestamp_overlaps(segments: list) -> list:
 def export_result(job_id):
     format_type = request.args.get("format", "txt")
     ui_lang = request.args.get("lang", "en")
-    job = stt_jobs.get(job_id)
+    with stt_jobs_lock:
+        job = stt_jobs.get(job_id)
+        if job:
+            job = copy.deepcopy(job)
 
     if not job or job["status"] != "done":
         return jsonify({"error": "Job not found or not finished"}), 404
