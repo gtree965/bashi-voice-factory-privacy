@@ -26,6 +26,17 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 METRICS_DIR = Path(".stt_metrics")
 METRICS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = int(os.environ.get("BASHI_STT_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
+_FULL_WIDTH_SPACE = "\u3000"
+_PROTECTED_PATTERNS = re.compile(
+    r"(https?://\S+|www\.\S+|"
+    r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+(?:/[A-Za-z0-9_./%-]*)?|"
+    r"(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?!\d)|"
+    r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|"
+    r"\b\d+\.\d+\b)"
+)
+_MULTI_SPACE_RE = re.compile(r" +")
+_MULTI_FWS_RE = re.compile(rf"{_FULL_WIDTH_SPACE}+")
+_SPACE_AROUND_FWS_RE = re.compile(rf" *{_FULL_WIDTH_SPACE} *")
 
 model_manager = ModelManager(MODELS_DIR)
 
@@ -720,14 +731,6 @@ def normalize_subtitle_text(text: str) -> str:
 
     # CJK subtitle style: remove punctuation, but keep a visual pause in the
     # middle of a sentence using one full-width space.
-    full_width_space = "\u3000"
-    protected_patterns = re.compile(
-        r"(https?://\S+|www\.\S+|"
-        r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+(?:/[A-Za-z0-9_./%-]*)?|"
-        r"(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?!\d)|"
-        r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|"
-        r"\b\d+\.\d+\b)"
-    )
     cjk_punctuation_chars = set("，。！？；：、《》【】「」『』〈〉〔〕“”‘’·…—–")
     punctuation_chars = cjk_punctuation_chars | set(
         ",.!?;:()[]{}<>"
@@ -757,7 +760,7 @@ def normalize_subtitle_text(text: str) -> str:
         protected[key] = match.group(0)
         return key
 
-    text = protected_patterns.sub(protect_match, text)
+    text = _PROTECTED_PATTERNS.sub(protect_match, text)
 
     out = []
     for i, ch in enumerate(text):
@@ -768,16 +771,16 @@ def normalize_subtitle_text(text: str) -> str:
         if ch in punctuation_chars:
             next_ch = next_visible_char(text, i + 1)
             if next_ch:
-                out.append(full_width_space)
+                out.append(_FULL_WIDTH_SPACE)
             continue
 
         out.append(ch)
 
     cleaned = "".join(out)
-    cleaned = re.sub(r" +", " ", cleaned)
-    cleaned = re.sub(rf"{full_width_space}+", full_width_space, cleaned)
-    cleaned = re.sub(rf" *{full_width_space} *", full_width_space, cleaned)
-    cleaned = cleaned.strip(" " + full_width_space)
+    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned)
+    cleaned = _MULTI_FWS_RE.sub(_FULL_WIDTH_SPACE, cleaned)
+    cleaned = _SPACE_AROUND_FWS_RE.sub(_FULL_WIDTH_SPACE, cleaned)
+    cleaned = cleaned.strip(" " + _FULL_WIDTH_SPACE)
     for key, value in protected.items():
         cleaned = cleaned.replace(key, value)
     return cleaned
