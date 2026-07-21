@@ -1422,13 +1422,15 @@ async function generateLongAudio(text, instruct) {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -2180,13 +2182,15 @@ async function downloadSelectedModel() {
         
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
         
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
             
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
             
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -2249,13 +2253,15 @@ async function downloadSpeakerModel() {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
                 if (!line.startsWith('data: ')) continue;
