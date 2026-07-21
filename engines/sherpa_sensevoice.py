@@ -10,6 +10,7 @@ except ImportError:
     sherpa_onnx = None
 
 from stt_engine import SttEngine, Segment
+from zh_confusion import apply_zh_confusions
 
 
 class SherpaSenseVoiceEngine(SttEngine):
@@ -216,7 +217,7 @@ class SherpaSenseVoiceEngine(SttEngine):
             stream.accept_waveform(sample_rate, seg_samples)
             self._recognizer.decode_stream(stream)
 
-            text = stream.result.text.strip()
+            text = apply_zh_confusions(stream.result.text.strip())
             if not text or self._is_punctuation_only(text):
                 continue
 

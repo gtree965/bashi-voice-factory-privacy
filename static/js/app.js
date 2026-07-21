@@ -7,6 +7,7 @@
 const state = {
     currentAppTab: 'tts', // 'tts' or 'stt'
     sttModels: [],
+    speakerDiarization: null,
     selectedSttModel: '',
     sttFile: null,
     sttJobId: null,
@@ -99,6 +100,12 @@ const elements = {
     sttModelSelect: document.getElementById('stt-model-select'),
     sttDownloadBtn: document.getElementById('stt-download-btn'),
     sttModelProgress: document.getElementById('stt-model-progress'),
+    sttSpeakerIdToggle: document.getElementById('stt-speaker-id-toggle'),
+    sttSpeakerCountSelect: document.getElementById('stt-speaker-count-select'),
+    sttSpeakerPresetSelect: document.getElementById('stt-speaker-preset-select'),
+    sttSpeakerDownloadBtn: document.getElementById('stt-speaker-download-btn'),
+    sttSpeakerStatus: document.getElementById('stt-speaker-status'),
+    sttSpeakerModelProgress: document.getElementById('stt-speaker-model-progress'),
     sttTranscribeBtn: document.getElementById('stt-transcribe-btn'),
     sttLangSelect: document.getElementById('stt-lang-select'),
     sttJobProgress: document.getElementById('stt-job-progress'),
@@ -1934,6 +1941,7 @@ function switchLanguage(lang) {
     renderCudaUpgrade();
     renderBenchmarkReferencePanel(state.eta?.references);
     renderEta();
+    renderSpeakerIdControls();
 }
 
 // Toast Notification
@@ -1993,6 +2001,8 @@ window.switchAppTab = switchAppTab;
 window.onSttModelChange = onSttModelChange;
 window.onSttLangChange = onSttLangChange;
 window.downloadSelectedModel = downloadSelectedModel;
+window.downloadSpeakerModel = downloadSpeakerModel;
+window.onSpeakerIdToggleChange = onSpeakerIdToggleChange;
 window.clearSttFile = clearSttFile;
 window.startTranscription = startTranscription;
 window.exportTranscription = exportTranscription;
@@ -2021,6 +2031,7 @@ async function loadSttModels() {
         elements.sttModelSelect.innerHTML = '';
         const allModels = [...data.installed, ...data.available];
         state.sttModels = allModels;
+        state.speakerDiarization = data.speaker_diarization || null;
         
         allModels.forEach(m => {
             const isInstalled = data.installed.some(inst => inst.id === m.id);
@@ -2032,21 +2043,77 @@ async function loadSttModels() {
             opt.dataset.enStr = `${m.name} ${statusEn}`;
             opt.dataset.zhStr = `${m.name} ${statusZh}`;
             opt.dataset.installed = isInstalled;
+            opt.dataset.default = m.is_default ? 'true' : 'false';
             
             elements.sttModelSelect.appendChild(opt);
-            
-            // Default to SenseVoice as baseline
-            if (m.id.includes('sensevoice') && isInstalled) {
-                elements.sttModelSelect.value = m.id;
-            }
         });
+
+        const defaultOpt = Array.from(elements.sttModelSelect.options)
+            .find(opt => opt.dataset.default === 'true');
+        if (defaultOpt) {
+            elements.sttModelSelect.value = defaultOpt.value;
+        }
 
         // Re-apply language-based model preference (e.g. Parakeet for English)
         onSttLangChange();
         onSttModelChange();
+        renderSpeakerIdControls();
     } catch (e) {
         console.error('Failed to load STT models', e);
     }
+}
+
+function isSpeakerDiarizationInstalled() {
+    return Boolean(state.speakerDiarization && state.speakerDiarization.installed);
+}
+
+function renderSpeakerIdControls() {
+    if (!elements.sttSpeakerIdToggle) return;
+
+    const uiEnabled = Boolean(state.speakerDiarization && state.speakerDiarization.ui_enabled);
+    const container = document.getElementById('stt-speaker-id-setting');
+    if (container) {
+        container.style.display = uiEnabled ? '' : 'none';
+    }
+    if (!uiEnabled) {
+        elements.sttSpeakerIdToggle.checked = false;
+        elements.sttSpeakerIdToggle.disabled = true;
+        if (elements.sttSpeakerCountSelect) elements.sttSpeakerCountSelect.disabled = true;
+        if (elements.sttSpeakerPresetSelect) elements.sttSpeakerPresetSelect.disabled = true;
+        if (elements.sttSpeakerDownloadBtn) elements.sttSpeakerDownloadBtn.style.display = 'none';
+        if (elements.sttSpeakerModelProgress) elements.sttSpeakerModelProgress.style.display = 'none';
+        return;
+    }
+
+    const installed = isSpeakerDiarizationInstalled();
+    elements.sttSpeakerIdToggle.disabled = !installed;
+    if (!installed) {
+        elements.sttSpeakerIdToggle.checked = false;
+    }
+    if (elements.sttSpeakerCountSelect) {
+        elements.sttSpeakerCountSelect.disabled = !installed || !elements.sttSpeakerIdToggle.checked;
+    }
+    if (elements.sttSpeakerPresetSelect) {
+        elements.sttSpeakerPresetSelect.disabled = !installed || !elements.sttSpeakerIdToggle.checked;
+    }
+    if (elements.sttSpeakerDownloadBtn) {
+        elements.sttSpeakerDownloadBtn.style.display = installed ? 'none' : 'inline-flex';
+    }
+    if (elements.sttSpeakerStatus) {
+        if (installed) {
+            elements.sttSpeakerStatus.textContent = state.currentLang === 'zh'
+                ? '已安装：可为会议转写添加说话人 1/2/3...'
+                : 'Installed: can add Speaker 1/2/3... labels to meeting transcripts.';
+        } else {
+            elements.sttSpeakerStatus.textContent = state.currentLang === 'zh'
+                ? '可选下载约 46 MB，本地离线运行。'
+                : 'Optional ~46 MB download, runs fully offline.';
+        }
+    }
+}
+
+function onSpeakerIdToggleChange() {
+    renderSpeakerIdControls();
 }
 
 function onSttModelChange() {
@@ -2068,25 +2135,28 @@ function onSttModelChange() {
 
 function onSttLangChange() {
     const lang = elements.sttLangSelect.value;
-    // Auto-select best model for the chosen language
-    // Parakeet is English-only; SenseVoice handles all other languages
-    const preferParakeet = (lang === 'en');
-    const opts = elements.sttModelSelect.options;
+    const opts = Array.from(elements.sttModelSelect.options);
+    const selectFirst = (predicate) => {
+        const opt = opts.find(predicate);
+        if (!opt) return false;
+        elements.sttModelSelect.value = opt.value;
+        onSttModelChange();
+        return true;
+    };
 
-    for (let i = 0; i < opts.length; i++) {
-        const id = opts[i].value;
-        const isInstalled = opts[i].dataset.installed === 'true';
-        if (preferParakeet && id.includes('parakeet') && isInstalled) {
-            elements.sttModelSelect.value = id;
-            onSttModelChange();
-            return;
-        }
-        if (!preferParakeet && id.includes('sensevoice') && isInstalled) {
-            elements.sttModelSelect.value = id;
-            onSttModelChange();
-            return;
-        }
+    if (lang === 'en') {
+        if (selectFirst(opt => opt.value.includes('parakeet') && opt.dataset.installed === 'true')) return;
+        if (selectFirst(opt => opt.value.includes('parakeet'))) return;
     }
+
+    if (['auto', 'ja', 'ko', 'yue'].includes(lang)) {
+        if (selectFirst(opt => opt.value.includes('sensevoice') && opt.dataset.installed === 'true')) return;
+        if (selectFirst(opt => opt.value.includes('sensevoice'))) return;
+    }
+
+    if (selectFirst(opt => opt.dataset.default === 'true' && opt.dataset.installed === 'true')) return;
+    if (selectFirst(opt => opt.dataset.default === 'true')) return;
+
     // If preferred model not installed, don't change selection
 }
 
@@ -2159,6 +2229,76 @@ async function downloadSelectedModel() {
     }
 }
 
+async function downloadSpeakerModel() {
+    if (!elements.sttSpeakerDownloadBtn) return;
+
+    elements.sttSpeakerDownloadBtn.disabled = true;
+    if (elements.sttSpeakerModelProgress) {
+        elements.sttSpeakerModelProgress.style.display = 'block';
+    }
+
+    const fill = document.getElementById('speaker-model-dl-fill');
+    const text = document.getElementById('speaker-model-dl-text');
+
+    try {
+        const response = await fetch('/api/stt/download-speaker-model', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ use_mirror: true })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.substring(6).trim();
+                if (!dataStr) continue;
+                const data = JSON.parse(dataStr);
+
+                if (data.status === 'downloading') {
+                    const pct = data.progress != null ? data.progress : 0;
+                    if (fill) fill.style.width = `${pct}%`;
+                    let progressLine = state.currentLang === 'zh' && data.message_zh
+                        ? data.message_zh
+                        : (data.message || `Downloading ${data.file || ''}...`);
+                    if (data.file_index != null && data.total_files != null) {
+                        progressLine += ` (${data.file_index}/${data.total_files})`;
+                    }
+                    if (text) text.textContent = progressLine;
+                } else if (data.status === 'done') {
+                    if (fill) fill.style.width = '100%';
+                    if (text) text.textContent = state.currentLang === 'zh' ? '说话人模型下载完成！' : 'Speaker ID model downloaded!';
+                    await loadSttModels();
+                    setTimeout(() => {
+                        if (elements.sttSpeakerModelProgress) {
+                            elements.sttSpeakerModelProgress.style.display = 'none';
+                        }
+                        elements.sttSpeakerDownloadBtn.disabled = false;
+                    }, 2000);
+                    return;
+                } else if (data.status === 'error') {
+                    throw new Error(data.error);
+                }
+            }
+        }
+    } catch (e) {
+        const msg = state.currentLang === 'zh' ? '说话人模型下载失败' : 'Speaker ID download failed';
+        showToast(msg + ': ' + e.message, 'error');
+        elements.sttSpeakerDownloadBtn.disabled = false;
+        if (elements.sttSpeakerModelProgress) {
+            elements.sttSpeakerModelProgress.style.display = 'none';
+        }
+    }
+}
+
 function clearSttFile(e) {
     if (e) e.stopPropagation();
     state.sttFile = null;
@@ -2187,6 +2327,15 @@ async function startTranscription() {
     formData.append('file', state.sttFile);
     formData.append('language', elements.sttLangSelect.value);
     formData.append('model_id', opt.value);
+    const speakerIdEnabled = Boolean(elements.sttSpeakerIdToggle && elements.sttSpeakerIdToggle.checked);
+    if (speakerIdEnabled && !isSpeakerDiarizationInstalled()) {
+        const msg = state.currentLang === 'zh' ? '请先下载说话人模型' : 'Please download the Speaker ID model first';
+        showToast(msg, 'error');
+        return;
+    }
+    formData.append('speaker_id', speakerIdEnabled ? '1' : '0');
+    formData.append('speaker_count', elements.sttSpeakerCountSelect ? elements.sttSpeakerCountSelect.value : '-1');
+    formData.append('speaker_preset', elements.sttSpeakerPresetSelect ? elements.sttSpeakerPresetSelect.value : 'balanced');
     
     elements.sttTranscribeBtn.style.display = 'none';
     document.getElementById('stt-loading').style.display = 'flex';
@@ -2235,11 +2384,16 @@ async function pollSttProgress() {
             if (data.new_segments && data.new_segments.length > 0) {
                 data.new_segments.forEach(seg => {
                     const p = document.createElement('p');
-                    p.textContent = `[${formatTime(seg.start)} - ${formatTime(seg.end)}] ${seg.text}`;
+                    p.textContent = formatSttSegment(seg, true);
                     elements.sttLiveSegments.appendChild(p);
                 });
                 elements.sttLiveSegments.scrollTop = elements.sttLiveSegments.scrollHeight;
             }
+        } else if (data.status === 'diarizing') {
+            const pct = data.speaker_progress != null ? ` (${data.speaker_progress}%)` : '';
+            titleEl.textContent = state.currentLang === 'zh'
+                ? `正在识别说话人${pct}...`
+                : `Identifying speakers${pct}...`;
         } else if (data.status === 'done') {
             eventSource.close();
             
@@ -2247,12 +2401,19 @@ async function pollSttProgress() {
             fetch(`/api/stt/result/${state.sttJobId}`)
                 .then(r => r.json())
                 .then(res => {
-                    elements.sttResultText.value = res.segments.map(s => s.text).join('\n');
+                    elements.sttResultText.value = res.segments.map(s => formatSttSegment(s, false)).join('\n');
                     elements.sttResultSection.style.display = 'block';
                     elements.sttTranscribeBtn.style.display = 'flex';
                     document.getElementById('stt-loading').style.display = 'none';
                     elements.sttJobProgress.style.display = 'none';
-                    showToast(state.currentLang === 'zh' ? '转写完成！' : 'Transcription complete!', 'success');
+                    if (res.speaker_error) {
+                        const msg = state.currentLang === 'zh'
+                            ? `转写完成，但说话人识别失败：${res.speaker_error}`
+                            : `Transcription complete, but Speaker ID failed: ${res.speaker_error}`;
+                        showToast(msg, 'info');
+                    } else {
+                        showToast(state.currentLang === 'zh' ? '转写完成！' : 'Transcription complete!', 'success');
+                    }
                 });
         } else if (data.status === 'error') {
             eventSource.close();
@@ -2275,6 +2436,19 @@ function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatSpeakerLabel(seg) {
+    if (!seg || seg.speaker === undefined || seg.speaker === null) return '';
+    const n = Number(seg.speaker) + 1;
+    return state.currentLang === 'zh' ? `说话人 ${n}` : `Speaker ${n}`;
+}
+
+function formatSttSegment(seg, includeTime) {
+    const speaker = formatSpeakerLabel(seg);
+    const speakerPrefix = speaker ? `${speaker}: ` : '';
+    const timePrefix = includeTime ? `[${formatTime(seg.start)} - ${formatTime(seg.end)}] ` : '';
+    return `${timePrefix}${speakerPrefix}${seg.text || ''}`;
 }
 
 function exportTranscription() {

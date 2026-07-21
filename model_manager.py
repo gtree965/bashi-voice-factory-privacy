@@ -1,4 +1,6 @@
 import hashlib
+import os
+import tarfile
 import time
 import urllib.request
 from pathlib import Path
@@ -31,8 +33,8 @@ MODEL_REGISTRY = {
             },
         },
         "is_default": True,
-        "description": "Fast & accurate for Chinese/English/Cantonese. Recommended.",
-        "description_zh": "中英粤语快速准确，推荐默认使用。",
+        "description": "Default fast multilingual ASR for Chinese/English/Cantonese. ~242MB download.",
+        "description_zh": "默认快速多语种识别档，支持中英粤语，约242MB。",
     },
     "parakeet-tdt-0.6b-v2-int8": {
         "name": "Parakeet TDT 0.6B (INT8)",
@@ -77,6 +79,38 @@ VAD_MODEL = {
     }
 }
 
+SPEAKER_DIARIZATION_MODEL = {
+    "id": "speaker-diarization-pyannote-3dspeaker",
+    "name": "Speaker ID (pyannote + 3D-Speaker)",
+    "name_zh": "说话人识别 (pyannote + 3D-Speaker)",
+    "size_mb": 73,
+    "description": "Offline speaker labels for meetings. Adds Speaker 1/2/3... to transcript exports.",
+    "description_zh": "本地多人说话人标注，为会议转写添加“说话人 1/2/3...”前缀。",
+    "required_files": [
+        "speaker-diarization/sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx",
+        "speaker-diarization/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+        "speaker-diarization/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+    ],
+    "files": {
+        "sherpa-onnx-pyannote-segmentation-3-0.tar.bz2": {
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+            "sha256": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+            "extract": True,
+            "complete_path": "speaker-diarization/sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx",
+        },
+        "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx": {
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+            "sha256": "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b",
+            "complete_path": "speaker-diarization/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+        },
+        "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx": {
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+            "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+            "complete_path": "speaker-diarization/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+        },
+    },
+}
+
 
 def _build_url_order(file_meta: dict, use_mirror: bool = True) -> list:
     urls = []
@@ -116,6 +150,23 @@ class ModelManager:
                 available.append({**meta, "id": model_id})
         return available
 
+    def get_speaker_diarization_status(self) -> dict:
+        meta = {
+            k: v for k, v in SPEAKER_DIARIZATION_MODEL.items()
+            if k not in ("files", "required_files")
+        }
+        return {
+            **meta,
+            "installed": self.is_speaker_diarization_complete(),
+            "ui_enabled": os.environ.get("BASHI_SPEAKER_ID_UI") == "1",
+        }
+
+    def is_speaker_diarization_complete(self) -> bool:
+        return all(
+            self._path_exists(self.models_dir / rel_path)
+            for rel_path in SPEAKER_DIARIZATION_MODEL["required_files"]
+        )
+
     def _is_model_complete(self, model_id: str) -> bool:
         meta = MODEL_REGISTRY.get(model_id)
         if not meta:
@@ -138,6 +189,11 @@ class ModelManager:
         for model_id in MODEL_REGISTRY:
             if self._is_model_complete(model_id):
                 return self.models_dir / model_id
+        return None
+
+    def get_speaker_diarization_dir(self) -> Optional[Path]:
+        if self.is_speaker_diarization_complete():
+            return self.models_dir / "speaker-diarization"
         return None
 
     def download_model(
@@ -201,6 +257,67 @@ class ModelManager:
             files_done += 1
 
         yield {"status": "done", "model_id": model_id}
+
+    def download_speaker_diarization_model(
+        self,
+        use_mirror: bool = True
+    ) -> Generator[dict, None, None]:
+        """Download the optional local Speaker ID model pack."""
+        model_root = self.models_dir / "speaker-diarization"
+        model_root.mkdir(parents=True, exist_ok=True)
+
+        pending = []
+        for fname, file_meta in SPEAKER_DIARIZATION_MODEL["files"].items():
+            complete_path = self.models_dir / file_meta["complete_path"]
+            if not self._path_exists(complete_path):
+                pending.append((fname, file_meta))
+
+        if not pending:
+            yield {
+                "status": "done",
+                "model_id": SPEAKER_DIARIZATION_MODEL["id"],
+            }
+            return
+
+        total_files = len(pending)
+        files_done = 0
+        for fname, file_meta in pending:
+            dest = model_root / fname
+            url_order = _build_url_order(file_meta, use_mirror=use_mirror)
+            if not url_order:
+                yield {"status": "error", "error": f"No download URLs configured for {fname}"}
+                return
+
+            try:
+                yield from self._download_one_file(
+                    fname=fname,
+                    file_meta=file_meta,
+                    dest=dest,
+                    url_order=url_order,
+                    files_done=files_done,
+                    total_files=total_files,
+                )
+                if file_meta.get("extract"):
+                    yield {
+                        "status": "downloading",
+                        "file": fname,
+                        "file_index": files_done + 1,
+                        "total_files": total_files,
+                        "progress": round(((files_done + 1) / total_files) * 100, 1),
+                        "message": f"Extracting {fname}...",
+                        "message_zh": f"正在解压 {fname}...",
+                    }
+                    self._extract_tar_safely(dest, model_root)
+                    dest.unlink(missing_ok=True)
+            except Exception as e:
+                yield {"status": "error", "error": str(e)}
+                return
+            files_done += 1
+
+        yield {
+            "status": "done",
+            "model_id": SPEAKER_DIARIZATION_MODEL["id"],
+        }
 
     def _download_one_file(
         self,
@@ -319,6 +436,28 @@ class ModelManager:
                 )
 
         part.replace(dest)
+
+    @staticmethod
+    def _extract_tar_safely(archive_path: Path, dest_dir: Path) -> None:
+        dest_root = dest_dir.resolve()
+        with tarfile.open(archive_path, "r:bz2") as tar:
+            members = tar.getmembers()
+            for member in members:
+                if member.issym() or member.islnk():
+                    raise RuntimeError(f"Refusing to extract link from model archive: {member.name}")
+                target = (dest_root / member.name).resolve()
+                target_text = str(target)
+                root_text = str(dest_root)
+                if target_text != root_text and not target_text.startswith(root_text + os.sep):
+                    raise RuntimeError(f"Refusing to extract unsafe path: {member.name}")
+            tar.extractall(dest_root, members=members)
+
+    @staticmethod
+    def _path_exists(path: Path) -> bool:
+        try:
+            return path.exists()
+        except OSError:
+            return False
 
     @staticmethod
     def _progress_event(

@@ -2104,6 +2104,45 @@ audio::-webkit-media-controls-panel {
     color: #f5576c;
 }
 
+.speaker-id-setting {
+    gap: var(--space-sm);
+}
+
+.speaker-id-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+}
+
+.toggle-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.toggle-row input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary-color);
+}
+
+.speaker-count-row {
+    margin-top: var(--space-xs);
+}
+
+.speaker-count-row select {
+    width: auto;
+    min-width: 120px;
+}
+
+.speaker-id-hint {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+
 /* Live Segments Box */
 .live-segments-box {
     margin-top: var(--space-md);

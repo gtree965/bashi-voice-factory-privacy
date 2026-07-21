@@ -11,6 +11,7 @@ class Segment:
     end: float     # seconds
     text: str
     language: str = ""
+    speaker: int | None = None
 
 
 @dataclass

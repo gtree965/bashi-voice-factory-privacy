@@ -9,6 +9,7 @@ from pathlib import Path
 
 import imageio_ffmpeg
 from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
+from werkzeug.utils import secure_filename
 
 from backend_probe import (
     MODEL_DEFAULT,
@@ -774,12 +775,21 @@ def convert_audio():
     if target_format not in ALLOWED_FORMATS:
         return jsonify({"error": f"Unsupported format: {target_format}"}), 400
 
-    source_path = OUTPUT_DIR / source_filename
+    safe_source_filename = secure_filename(source_filename)
+    if not safe_source_filename or safe_source_filename != source_filename:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    source_path = (OUTPUT_DIR / safe_source_filename).resolve()
+    output_root = OUTPUT_DIR.resolve()
+    if output_root not in source_path.parents:
+        return jsonify({"error": "Invalid filename"}), 400
     if not source_path.exists():
         return jsonify({"error": "Source file not found"}), 404
 
     target_filename = source_path.stem + f".{target_format}"
-    target_path = OUTPUT_DIR / target_filename
+    target_path = (OUTPUT_DIR / target_filename).resolve()
+    if output_root not in target_path.parents:
+        return jsonify({"error": "Invalid filename"}), 400
 
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     try:

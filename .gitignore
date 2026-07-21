@@ -26,6 +26,7 @@ python-*-embed-amd64.zip
 *.log
 launch_log.txt
 .tmp/
+.stt_metrics/
 tmp_*/
 tmp*/
 *.tmp

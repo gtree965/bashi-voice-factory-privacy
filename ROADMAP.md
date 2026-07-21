@@ -10,6 +10,7 @@
 | **v0.1.0** | Windows initial release | Released 2026-05 | shipped |
 | **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Released 2026-06 | shipped |
 | **v0.1.2** | NVIDIA detection and backend robustness (Windows) | Released 2026-06-15 | shipped |
+| **v0.1.3** | STT quality/safety patch: SenseVoice default + disabled Speaker ID UI | In progress | next patch |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -39,7 +40,7 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
 
 - Windows 10/11 x64
 - Local TTS: Qwen3-TTS-12Hz-1.7B-CustomVoice via GGUF runtime + `ggml-vulkan.dll` (universal: AMD / Intel / NVIDIA via Vulkan driver)
-- Local STT: SenseVoice Small (default) + optional Parakeet TDT, via sherpa-onnx
+- Local STT: SenseVoice Small (default multilingual fast lane), optional Parakeet TDT English, via sherpa-onnx
 - DirectML execution provider for ONNX decoder
 - Embedded Python 3.12.10 (no system Python dependency)
 - Thin-zip distribution (~108 MB) + JIT model downloads from ModelScope (GGUF 2.2 GB) and hf-mirror.com (STT 242 MB)
@@ -149,6 +150,33 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 - Recognize a GGUF installation with `ggml-cuda.dll` even when Vulkan is intentionally disabled.
 - Preserve legitimate `USE_GGUF_BACKEND` overrides and add a launcher-level Vulkan-disable switch.
 - Bundle the small first-launch pip wheel to reduce bootstrap failure risk.
+
+---
+
+## v0.1.3 — STT quality/safety patch (Windows patch, in progress)
+
+**Goal**: improve Chinese STT quality without losing the fast local workflow, and remove UI paths that imply unsupported accuracy.
+
+### Planned / working scope
+
+- Keep **SenseVoice Small** as the default fast multilingual STT model.
+- Keep **Parakeet TDT 0.6B** as the optional English-specialist model.
+- Remove **Paraformer Chinese Large** from the product surface. Decision locked on 2026-07-04 after three-way subtitle evaluation and review: the integrated Paraformer path did not use true token timestamps, had worse Chinese accuracy than SenseVoice, and added a redundant model/download path.
+- Add a static Chinese STT correction layer: `zh_confusion.py` + user-editable `data/zh_confusion.tsv`. It runs on SenseVoice text before subtitle splitting, keeps risky common-word replacements disabled by default, and is the current highest-ROI path for real-domain Chinese quality improvements.
+- Stop treating **FireRedASR AED-L** as a candidate product path. Quality was strong, but CPU speed failed the cutoff decisively on the same 68.5min meeting:
+  - serial baseline: `asr_seconds=4283s`
+  - time-order batch: `asr_seconds=4678.875s`
+  - length-bucket batch: `asr_seconds=4802.907s`
+  - conclusion: CPU FireRed is ~1x realtime and batch decoding regressed, so the CPU high-quality lane is closed.
+- Hide **Speaker ID** UI by default. The single-mic far-field meeting test collapsed into unusable clusters even after CAM++/ERes2Net attempts, so it is not a release feature.
+- Add STT upload-size guardrails and tighten audio-conversion filename validation.
+
+### Backlog, not release scope
+
+- Revisit speaker labeling only if the recording condition changes, e.g. one mic per person or multichannel input.
+- Consider GPU ASR (for example whisper.cpp Vulkan) for the "high quality + fast" lane.
+- Expand `data/zh_confusion.tsv` only from real user audio mistakes, with each candidate classified as safe global replacement, phrase-anchored replacement, or disabled dangerous item.
+- Refactor duplicated STT VAD/WAV logic after the product direction settles.
 
 ---
 
@@ -305,4 +333,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-06-15 (v0.1.2 NVIDIA detection and startup-probe robustness release). Next review: before the next Windows patch or v0.2 cross-platform work.*
+*Last updated: 2026-07-05 (v0.1.3 STT quality/safety patch planning). Next review: before the next Windows patch or v0.2 cross-platform work.*

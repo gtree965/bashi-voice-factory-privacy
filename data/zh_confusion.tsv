@@ -1,0 +1,41 @@
+# Chinese STT post-processing confusion table.
+# Format: wrong<TAB>correct
+# Lines starting with # are disabled. Keep keys specific: Chinese has no word
+# boundaries, so short common words can cause false replacements.
+
+# A. Safe high-frequency fixes: wrong strings are unlikely normal words.
+或野秦川	沃野秦川
+易手难攻	易守难攻
+驼铃生生	驼铃声声
+稀有罗马	西有罗马
+访糖建筑	仿唐建筑
+衰完酒	摔碗酒
+遗流的	遗留的
+
+# B. Phrase-anchored fixes: do not shorten these keys.
+傍水还山	傍水环山
+外国征要	外国政要
+商州青铜	商周青铜
+已发觉的三座	已发掘的三座
+石碑和木制	石碑和墓志
+
+# C. Domain-specific seed: AI, education, and model names.
+智普	智谱
+智浦	智谱
+通译千问	通义千问
+通义千文	通义千问
+文心一原	文心一言
+
+# Disabled by default: common words that can be correct in normal text.
+# Uncomment only for a narrow domain where the replacement is always desired.
+# 一考	艺考
+# 易考	艺考
+# 易考生	艺考生
+# 易考培训	艺考培训
+# 美术易考	美术艺考
+# 浏览	游览
+# 发觉	发掘
+# 铸造	督造
+# 红利	宏丽
+# 木制	墓志
+# 建成史	建城史

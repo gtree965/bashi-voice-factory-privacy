@@ -1,15 +1,15 @@
 # System Overview
 
-This document is intended for AI tools and new contributors who need a fast, accurate mental model of the codebase.
+This document is for AI tools and contributors who need a current, code-level mental model of Bashi Voice Factory Privacy Edition.
 
 ## Project Identity
 
-`Bashi Voice Factory / 巴适声工厂` is a Flask-based local web application with two primary capabilities:
+`Bashi Voice Factory Privacy Edition` is a local Flask web application for:
 
-- `TTS`: text-to-speech using Microsoft Edge TTS via the `edge-tts` Python package
-- `STT`: speech-to-text using local offline ASR models through `sherpa-onnx`
+- `TTS`: local Qwen3-TTS-12Hz-1.7B-CustomVoice synthesis
+- `STT`: local sherpa-onnx transcription
 
-The app is designed as a single-machine web UI rather than a cloud backend. The browser is the UI, Flask is the application server, TTS is network-backed, and STT is local/offline.
+The browser is the UI, Flask is the local server, runtime state is stored on disk or in memory, and the product is optimized for portable Windows distribution.
 
 ## High-Level Architecture
 
@@ -22,443 +22,494 @@ Flask app (app.py)
   |
   +-- TTS Blueprint (tts_routes.py)
   |     |
-  |     +-- input preprocessing
-  |     |     - long text chunking
-  |     |     - Chinese TTS patch rules
+  |     +-- request validation and chunking
+  |     +-- backend status / ETA / CUDA add-on routes
+  |     +-- local_tts_engine.py backend selector
+  |     |     |
+  |     |     +-- local_tts_engine_gguf.py
+  |     |     |     +-- Qwen3-TTS-GGUF runtime
+  |     |     |     +-- Vulkan / CUDA / CPU ggml backend
+  |     |     |     +-- DirectML or CPU ONNX decoder
+  |     |     |
+  |     |     +-- local_tts_engine_pytorch.py
+  |     |           +-- bashi_tts_kernel package
+  |     |           +-- PyTorch / qwen-tts path
   |     |
-  |     +-- Microsoft Edge TTS via edge_tts
-  |     |
-  |     +-- optional ffmpeg conversion
-  |     +-- runtime audio outputs in static/audio/
+  |     +-- output files in static/audio/
   |
   +-- STT Blueprint (stt_routes.py)
         |
         +-- upload media to static/uploads/
-        +-- ffmpeg audio extraction
-        +-- model selection / download
-        +-- load local ASR engine
-        |     - SenseVoice
-        |     - Parakeet
+        +-- utils.extract_audio_wav() to 16 kHz WAV
+        +-- model_manager.py model registry / downloads
+        +-- sherpa-onnx engine wrappers
+        |     +-- engines/sherpa_sensevoice.py
+        |     +-- engines/sherpa_parakeet.py
         |
+        +-- zh_confusion.py static Chinese correction layer
+        +-- optional speaker_diarization.py path, UI disabled by default
         +-- background transcription thread
         +-- SSE progress stream
         +-- TXT / SRT / VTT export
-              - segment merge
-              - subtitle normalization
-              - timestamp cleanup
 ```
 
-## Runtime Data Flow
+## Runtime Flows
 
-### TTS Flow
+### Startup
 
 ```text
-User enters text in browser
--> front-end submits TTS request
--> tts_routes.py validates and preprocesses text
--> optional Chinese patching via zh_tts_patch.py
--> edge_tts synthesizes audio
--> optional ffmpeg conversion to wav/ogg/flac
--> output saved to static/audio/
--> browser plays or downloads generated file
+run_portable.ps1 / run_portable.bat
+-> ensure embedded Python and dependencies
+-> ensure GGUF runtime model pack when needed
+-> app.py calls backend_probe.bootstrap_backend_selection()
+-> local_tts_engine.py imports the selected TTS service
+-> Flask registers TTS and STT blueprints
 ```
 
-### STT Flow
+Important startup files:
+
+- `backend_probe.py`
+- `run_portable.ps1`
+- `run_portable.bat`
+- `download_gguf_model.py`
+- `download_cuda_runtime.py`
+
+### TTS
+
+```text
+User submits text
+-> static/js/app.js posts to tts_routes.py
+-> tts_routes.py validates mode, speaker, language, and chunking settings
+-> selected local TTS service synthesizes audio
+-> audio is saved in static/audio/
+-> browser receives playback/download metadata
+```
+
+Current TTS backends:
+
+- GGUF path: `local_tts_engine_gguf.py`
+- PyTorch path: `local_tts_engine_pytorch.py`
+- common import switch: `local_tts_engine.py`
+- shared PyTorch kernel package: `bashi_tts_kernel/`
+
+### STT
 
 ```text
 User uploads audio/video
--> stt_routes.py saves original file to static/uploads/
--> utils.extract_audio_wav() creates wav
--> model_manager.py resolves selected model
--> sherpa engine transcribes audio in background thread
--> segments stored in in-memory stt_jobs[job_id]
+-> stt_routes.py stores the original upload in static/uploads/
+-> utils.extract_audio_wav() creates a 16 kHz WAV
+-> stt_routes.acquire_engine() loads selected sherpa wrapper
+-> engine runs Silero VAD and sherpa-onnx recognition
+-> SenseVoice output passes through zh_confusion.py before subtitle splitting
+-> stt_jobs[job_id] accumulates segments
 -> browser receives progress via SSE
--> final result available as JSON / TXT / SRT / VTT
+-> export_result() returns TXT / SRT / VTT
 ```
 
-## Architectural Style
+Current STT engines:
 
-- Monolithic Flask application
-- Native server-rendered HTML entry point
-- Front-end logic is plain JavaScript, not React/Vue
-- No database; operational state is kept in memory or on disk
-- Runtime storage is filesystem-based
-- STT jobs are ephemeral in-process objects
-- Packaging supports portable Windows distribution and shell launchers for other platforms
+- `sensevoice-small-int8`: default multilingual model, zh/en/ja/ko/yue
+- `parakeet-tdt-0.6b-v2-int8`: English-specialist model
 
 ## Core Source Tree
 
 ```text
-edge-tts-app/
+bashi-privacy-app/
 ├─ app.py
+├─ backend_probe.py
 ├─ tts_routes.py
 ├─ stt_routes.py
-├─ zh_tts_patch.py
+├─ local_tts_engine.py
+├─ local_tts_engine_gguf.py
+├─ local_tts_engine_pytorch.py
+├─ local_voice_catalog.py
 ├─ model_manager.py
+├─ speaker_diarization.py
 ├─ stt_engine.py
+├─ zh_confusion.py
 ├─ utils.py
-├─ download_model.py
-├─ VERSION
+├─ audio_encoding.py
+├─ download_gguf_model.py
+├─ download_cuda_runtime.py
 ├─ requirements.txt
-├─ run_portable.bat
-├─ run_venv.sh
-├─ templates/
-│  └─ index.html
-├─ static/
-│  ├─ css/
-│  │  └─ style.css
-│  ├─ js/
-│  │  └─ app.js
-│  ├─ images/
-│  ├─ audio/
-│  └─ uploads/
+├─ VERSION
+├─ data/
+│  └─ zh_confusion.tsv
+├─ bashi_tts_kernel/
+│  ├─ __init__.py
+│  ├─ bashi_tts_core.py
+│  ├─ speakers.json
+│  └─ zh_normalizer_lite.py
 ├─ engines/
 │  ├─ sherpa_sensevoice.py
 │  └─ sherpa_parakeet.py
-├─ models/
-├─ dist/
-├─ test_export_subtitles.py
-├─ test_zh_tts_patch.py
-├─ test_tts_readback.py
-├─ test_models.py
-└─ README.md / README_CN.md
+├─ templates/
+│  └─ index.html
+├─ static/
+│  ├─ css/style.css
+│  ├─ js/app.js
+│  ├─ images/
+│  ├─ audio/
+│  └─ uploads/
+├─ scripts/
+│  ├─ build_portable_zip.ps1
+│  ├─ precheck_py312_embed.ps1
+│  └─ run_speaker_diarization_probe.py
+└─ release_docs/
 ```
 
-## File-by-File Responsibilities
+## File Responsibilities
 
-### Entry and App Wiring
+### App Wiring
 
 - `app.py`
-  - Flask app entry point
+  - creates the Flask app
   - registers TTS and STT blueprints
-  - serves `/`
-  - performs old-file cleanup on startup
-  - parses `--host` and `--port`
+  - runs backend preflight selection before serving
+  - cleans old runtime audio/upload files on startup
+
+- `backend_probe.py`
+  - chooses GGUF or PyTorch backend
+  - detects hardware and GGUF accelerator class
+  - runs isolated real probes so native crashes do not kill startup silently
+  - caches probe results for faster relaunch
 
 ### TTS Domain
 
 - `tts_routes.py`
-  - TTS API endpoints
-  - voice registry
-  - long-text chunking
-  - shadowing / segmented playback logic
-  - synthesis via `edge_tts`
-  - output file generation
-  - ffmpeg-based audio conversion
-  - Chinese text preprocessing integration
+  - synthesis routes
+  - speaker and style handling
+  - text chunking
+  - output file serving
+  - benchmark / ETA routes
+  - system-info route
+  - CUDA add-on status and download routes
 
-- `zh_tts_patch.py`
-  - lightweight Chinese TTS patch layer
-  - intentionally small and high-value only
-  - handles:
-    - classical chapter references
-    - selected phone number formats
-    - URL simplification
-    - file path simplification
-    - punctuation cleanup
-  - not intended to be a full Chinese normalizer
+- `local_tts_engine.py`
+  - imports the active TTS service according to `USE_GGUF_BACKEND`
+
+- `local_tts_engine_gguf.py`
+  - wraps the GGUF runtime under `vulkan_backend_spike/Qwen3-TTS-GGUF`
+  - manages long-text chunk grouping
+  - trims per-chunk silence for long-mode output
+  - uses `bashi_tts_kernel.zh_normalizer_lite` for conservative Chinese text normalization
+
+- `local_tts_engine_pytorch.py`
+  - wraps the PyTorch/qwen-tts path
+  - uses model weights under `bashi_tts_kernel/models/`
+
+- `local_voice_catalog.py`
+  - exposes bundled speaker metadata and preview mapping
+
+- `bashi_tts_kernel/`
+  - local kernel support for the PyTorch path
+  - includes speaker metadata and the lightweight Chinese normalizer
 
 ### STT Domain
 
 - `stt_routes.py`
   - STT API endpoints
   - upload handling
-  - model listing and download APIs
-  - job lifecycle and in-memory job storage
+  - model listing and download routes
   - single-job admission control
-  - background transcription thread
-  - SSE progress endpoint
-  - export to `txt`, `srt`, `vtt`
-  - subtitle cleanup and formatting rules
+  - background transcription worker
+  - SSE progress stream
+  - optional Speaker ID orchestration
+  - TXT / SRT / VTT export helpers
 
 - `model_manager.py`
-  - model registry
-  - model presence checks
-  - model download logic
-  - mirror support
-  - file hashing / verification
-  - default model selection
+  - ASR model registry
+  - shared Silero VAD model metadata
+  - optional Speaker ID model metadata
+  - model completeness checks
+  - byte-progress download generator with mirror fallback
+  - tar extraction for Speaker ID assets
 
 - `stt_engine.py`
-  - shared STT data model / abstractions
-  - segment structures used by engine wrappers
+  - shared `Segment` and `TranscriptionResult` dataclasses
+  - abstract STT engine interface
 
 - `engines/sherpa_sensevoice.py`
-  - wrapper around sherpa-onnx SenseVoice inference
-  - multilingual STT path
-  - segmentation / punctuation-aware output handling
+  - SenseVoice + Silero VAD wrapper
+  - default multilingual STT path
+  - applies `zh_confusion.py` after `result.text.strip()` and before subtitle splitting
 
 - `engines/sherpa_parakeet.py`
-  - wrapper around sherpa-onnx Parakeet inference
+  - Parakeet TDT + Silero VAD wrapper
   - English-specialized STT path
+
+- `zh_confusion.py`
+  - loads `data/zh_confusion.tsv`
+  - caches by mtime
+  - applies longest-key-first static Chinese corrections
+  - fails safe to no-op when the table is missing or unreadable
+
+- `data/zh_confusion.tsv`
+  - user-editable wrong/right table
+  - active entries are conservative, high-confidence corrections
+  - dangerous common-word replacements remain commented out by default
+
+- `speaker_diarization.py`
+  - experimental local speaker labeling wrapper
+  - maps diarization turns onto ASR segments
+  - release UI stays hidden unless `BASHI_SPEAKER_ID_UI=1`
 
 ### Shared Helpers
 
 - `utils.py`
-  - ffmpeg-based audio extraction helper
-  - cleanup helpers for old runtime files
+  - ffmpeg-backed audio extraction through `imageio_ffmpeg`
+  - runtime cleanup helpers
 
-- `download_model.py`
-  - minimal CLI helper used by `run_portable.bat`
-  - downloads the default STT model without launching the web app
+- `audio_encoding.py`
+  - audio encoding/format utilities used by TTS routes and tests
 
-### Front-End
+### Front End
 
 - `templates/index.html`
-  - single-page shell
-  - contains the UI structure for both TTS and STT
+  - single-page shell for TTS and STT
 
 - `static/js/app.js`
-  - all front-end behavior
-  - TTS form submission
-  - STT upload and polling/SSE logic
-  - UI state transitions
-  - export controls
-  - model/language dropdown interaction
+  - all browser behavior
+  - TTS request flow
+  - backend/ETA display
+  - CUDA upgrade UI
+  - STT model/language routing
+  - STT upload/progress/result/export flow
 
 - `static/css/style.css`
-  - main styling for the app
+  - UI styling
 
-- `static/images/`
-  - branding and donation images
+### Packaging
 
-### Packaging and Distribution
+- `scripts/build_portable_zip.ps1`
+  - stages the Windows portable package
+  - copies required Python files, `data/`, `engines/`, templates, static assets, and launchers
+  - excludes caches, tests, generated audio, generated transcripts, and local model files
 
-- `run_portable.bat`
-  - Windows portable launcher
-  - locates embedded Python
-  - bootstraps pip
-  - installs requirements
-  - optionally downloads the default STT model
-  - starts Flask app
+- `scripts/precheck_py312_embed.ps1`
+  - validates the embedded Python environment before release
 
-- `run_venv.sh`
-  - Unix shell launcher
+- `run_portable.ps1` / `run_portable.bat`
+  - first-launch dependency setup
+  - GGUF runtime pack check/download
+  - local Flask launch
 
-- `build_mac_linux_bundle.py`
-  - generates trimmed Mac/Linux distribution bundle
+- `run-gguf.*` and `run-pytorch.*`
+  - backend-pinned launchers for debugging and comparison
 
-- `dist/`
-  - packaged release outputs
-
-## Key Runtime Directories
+## Runtime Directories
 
 - `static/audio/`
-  - TTS output files created at runtime
+  - generated TTS files
 
 - `static/uploads/`
-  - uploaded user media and temporary WAV files for STT
+  - uploaded media and extracted WAV files while STT jobs run
 
 - `models/`
-  - downloaded STT models
+  - downloaded STT and Speaker ID models
+
+- `.stt_metrics/`
+  - JSON timing and Speaker ID diagnostic records for completed STT jobs
+
+- `.tmp/`
+  - local temporary probes and development artifacts
 
 - `dist/`
-  - generated release packages
+  - packaged release output
 
-- `tts_readback_outputs/`
-  - development-only benchmark outputs for TTS readback testing
+## Internal Concepts
 
-## Major Internal Concepts
+### Backend Selection
 
-### TTS Text Preparation
+The app chooses a TTS backend before serving requests.
 
-TTS requests may go through a preparation step before synthesis:
+- `USE_GGUF_BACKEND=1` pins GGUF.
+- `USE_PYTORCH_BACKEND=1` pins PyTorch.
+- Conflicting overrides abort startup with a clear error.
+- GGUF accelerator reporting distinguishes CUDA, Vulkan, CPU, and unknown/fallback states.
 
-- long text is chunked
-- Chinese text may be normalized using `zh_tts_patch.py`
-- TTS outputs are saved first, then optionally converted to alternative formats
+### TTS Chunking
+
+`tts_routes.split_into_chunks()` is the route-layer splitter. GGUF long mode reuses it and then applies GGUF-specific phrase grouping in `local_tts_engine_gguf.py`.
 
 ### STT Job Model
 
-STT work is represented in memory using `stt_jobs`, keyed by `job_id`.
+`stt_jobs` is an in-memory dictionary keyed by `job_id`. Jobs include:
 
-Each job typically contains:
-
-- `job_id`
-- original filename
-- selected model id
+- filename and selected model id
 - status
 - accumulated segments
-- error, if any
+- optional Speaker ID fields
+- timing metrics
+- error state
 - creation timestamp
 
-This is not persisted to a database.
+Only one transcription job is admitted at a time. `engine_lock`, `_job_active`, `_engine_ref_count`, `engine_instance`, and `current_engine_model_id` coordinate admission and model reuse.
 
-### STT Concurrency Model
+### STT Correction Layer
 
-The current design intentionally allows only one active transcription at a time.
+SenseVoice text is corrected before subtitle splitting:
 
-Reasons:
+```text
+stream.result.text.strip()
+-> zh_confusion.apply_zh_confusions()
+-> _is_punctuation_only()
+-> _split_text_into_segments()
+```
 
-- the shared engine instance is global
-- offline recognizers are not assumed thread-safe for concurrent decode
-- single-job admission simplifies teardown, model swapping, and portable deployment
-
-Key control variables in `stt_routes.py`:
-
-- `_job_active`
-- `_engine_ref_count`
-- `engine_instance`
-- `current_engine_model_id`
-- `engine_lock`
+The correction layer is deliberately static and editable. It does not use model-based rewriting, and it avoids broad common-word replacements unless the user explicitly enables them in the TSV file.
 
 ### Subtitle Export Pipeline
 
-For `srt` and `vtt`, the export path is more than a plain dump:
+`stt_routes.export_result()` performs export-only cleanup:
 
-1. merge short ASR fragments
+1. merge short fragments for `srt` and `vtt`
 2. fix timestamp overlaps
 3. normalize subtitle text
-4. skip empty cues
-5. write final export
+4. optionally add speaker prefixes
+5. skip empty cues
+6. return the requested format
 
-Important helper functions in `stt_routes.py`:
+`txt` export stays close to the raw transcript, except for optional speaker labels.
 
-- `merge_short_segments()`
-- `fix_timestamp_overlaps()`
-- `normalize_subtitle_text()`
-- `format_timestamp()`
+### Speaker ID
 
-### Chinese Subtitle Policy
+Speaker labeling is present as an experimental offline path. It is disabled in the release UI by default because single-mic far-field meeting tests produced unreliable clusters. Enable only for experiments with `BASHI_SPEAKER_ID_UI=1`.
 
-The current subtitle policy is language-sensitive:
-
-- CJK-dominant subtitle text:
-  - removes punctuation
-  - preserves visual pause with one full-width space
-  - protects URLs, times, and formatted numbers
-
-- English-dominant subtitle text:
-  - punctuation is preserved
-
-### Chinese TTS Patch Policy
-
-The TTS patch layer is intentionally conservative:
-
-- only high-value, proven cases are patched
-- no broad number/date normalization
-- English and non-Chinese paths should remain unaffected
-
-## External Dependencies
+## Dependencies
 
 Declared in `requirements.txt`:
 
-- `flask`
-- `edge-tts`
-- `imageio-ffmpeg`
-- `sherpa-onnx`
-- `numpy`
+- Flask
+- imageio-ffmpeg
+- numpy
+- soundfile
+- torch
+- transformers
+- accelerate
+- huggingface_hub
+- safetensors
+- qwen-tts
+- sherpa-onnx
+- gguf
+- onnx
+- onnxruntime-directml
+- sentencepiece
+- sounddevice
 
-Functional dependency notes:
+Functional notes:
 
-- TTS depends on Microsoft Edge TTS service over the network
-- STT is local/offline after model download
-- ffmpeg capability is used through `imageio_ffmpeg`
+- TTS synthesis is local after dependencies and model assets are present.
+- STT inference is local after model download.
+- First launch may download Python dependencies and the GGUF runtime model pack.
+- Optional CUDA and STT model downloads are user-initiated.
 
 ## Current Model Inventory
 
-Managed by `model_manager.py`:
+Managed in `model_manager.py`:
 
 - `sensevoice-small-int8`
-  - multilingual default
-  - Chinese / English / Japanese / Korean / Cantonese
+  - default STT model
+  - supports Chinese, English, Japanese, Korean, and Cantonese
 
 - `parakeet-tdt-0.6b-v2-int8`
-  - English-specialist model
+  - optional English-specialist STT model
 
-The model registry is currently code-defined rather than dynamically discovered.
+- `speaker-diarization-pyannote-3dspeaker`
+  - optional experimental Speaker ID pack
+  - hidden from the release UI by default
 
-## Testing and Validation Files
+## Testing
 
-- `test_export_subtitles.py`
-  - regression tests for subtitle export policy
+Common verification commands:
 
-- `test_zh_tts_patch.py`
-  - regression tests for Chinese TTS patch behavior
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+node --check static\js\app.js
+git diff --check
+```
 
-- `test_tts_readback.py`
-  - TTS -> STT readback benchmark harness
-  - useful for validating whether TTS preprocessing improves spoken output
+High-signal test files:
 
-- `test_models.py`
-  - model comparison / quality evaluation
+- `tests/test_backend_probe.py`
+- `tests/test_stt_speaker_id.py`
+- `tests/test_zh_confusion.py`
+- `tests/test_text_chunking.py`
+- `tests/test_tts_routes_instruct.py`
+- `tests/test_audio_encoding.py`
 
-- `test_stt.py`
-  - smaller STT-focused checks
+## Practical Guidance
 
-## Non-Core or Development-Only Areas
+### Modify TTS Behavior
 
-These are usually not needed for architecture-level edits:
-
-- `.git/`
-- `docs_v3/`
-- `tts_readback_outputs/`
-- test media files in repository root
-- prior packaged archives in repository root
-
-## Practical Guidance for AI Tools
-
-### If you need to modify TTS behavior
-
-Start here:
+Start with:
 
 - `tts_routes.py`
-- `zh_tts_patch.py`
+- `local_tts_engine_gguf.py`
+- `local_tts_engine_pytorch.py`
+- `bashi_tts_kernel/zh_normalizer_lite.py`
 - `static/js/app.js`
 
-Typical tasks:
+Keep GGUF-only long-mode behavior inside the GGUF service; do not push it into a shared base unless the PyTorch path actually needs the same behavior.
 
-- add preprocessing rules
-- change chunking behavior
-- alter audio export logic
-- update voice behavior or UI presentation
+### Modify STT Behavior
 
-### If you need to modify STT behavior
-
-Start here:
+Start with:
 
 - `stt_routes.py`
 - `model_manager.py`
+- `stt_engine.py`
 - `engines/sherpa_sensevoice.py`
 - `engines/sherpa_parakeet.py`
+- `zh_confusion.py`
 
-Typical tasks:
+Preserve the multilingual-safe `auto` route to SenseVoice unless there is a product decision to change it.
 
-- add or change model selection
-- adjust concurrency behavior
-- modify subtitle export policy
-- improve segment merging
-- alter progress streaming
+### Modify Chinese STT Corrections
 
-### If you need to modify export formatting
+Edit:
 
-Primary file:
+- `data/zh_confusion.tsv`
 
-- `stt_routes.py`
+Rules of thumb:
 
-Focus on:
+- prefer long phrase keys
+- keep common-word homophones commented out unless a narrow domain makes them safe
+- validate with `tests/test_zh_confusion.py`
 
-- `normalize_subtitle_text()`
-- `merge_short_segments()`
-- `export_result()`
+### Modify Export Formatting
 
-### If you need to modify packaging or portable startup
+Start with:
 
-Start here:
+- `stt_routes.normalize_subtitle_text()`
+- `stt_routes.merge_short_segments()`
+- `stt_routes.fix_timestamp_overlaps()`
+- `stt_routes.export_result()`
 
+Keep raw transcript behavior separate from subtitle readability cleanup.
+
+### Modify Packaging
+
+Start with:
+
+- `scripts/build_portable_zip.ps1`
+- `run_portable.ps1`
 - `run_portable.bat`
-- `download_model.py`
-- `build_mac_linux_bundle.py`
-- `dist/`
+- `download_gguf_model.py`
+- `download_cuda_runtime.py`
 
-## Design Constraints and Assumptions
+When adding a runtime Python module or data directory, make sure the portable staging script copies it.
 
-- The app is optimized for simple local deployment, not clustered deployment
-- TTS and STT are implemented in the same Flask app process
-- STT state is not persistent across restarts
-- Front-end and back-end are tightly coupled through current route contracts
-- File paths and packaging matter because Windows portable distribution is a first-class use case
+## Design Constraints
+
+- local-first and privacy-first
+- no telemetry
+- no background update checks
+- simple portable Windows distribution is a first-class use case
+- one active STT job at a time
+- STT model downloads are explicit and user-initiated
+- user-facing release notes should avoid internal validation noise
 
 ## One-Sentence Summary
 
-This repository is a Flask monolith with a plain-JS front-end, Microsoft-backed TTS, sherpa-onnx-backed offline STT, filesystem-based runtime storage, SSE progress updates, and a portable-distribution-friendly structure centered on `app.py`, `tts_routes.py`, `stt_routes.py`, `zh_tts_patch.py`, `model_manager.py`, and `engines/`.
+This repository is a Flask monolith with a plain-JS front end, local Qwen3 TTS through GGUF or PyTorch, local sherpa-onnx STT through SenseVoice and Parakeet, a static Chinese STT correction table, filesystem-based runtime storage, SSE progress updates, and Windows-portable packaging centered on `app.py`, `tts_routes.py`, `stt_routes.py`, `local_tts_engine*.py`, `model_manager.py`, `backend_probe.py`, and `engines/`.

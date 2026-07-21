@@ -404,6 +404,40 @@
                                 <option value="yue" data-en="Cantonese" data-zh="粤语">Cantonese</option>
                             </select>
                         </div>
+                        <div class="setting-item speaker-id-setting" id="stt-speaker-id-setting" style="display: none;">
+                            <label data-en="Speaker ID" data-zh="说话人识别">Speaker ID</label>
+                            <div class="speaker-id-row">
+                                <label class="toggle-row">
+                                    <input type="checkbox" id="stt-speaker-id-toggle" onchange="onSpeakerIdToggleChange()">
+                                    <span data-en="Label speakers" data-zh="标注说话人">Label speakers</span>
+                                </label>
+                                <button id="stt-speaker-download-btn" class="download-btn" style="padding: 10px 20px; display: none;" onclick="downloadSpeakerModel()">
+                                    <span data-en="Download Speaker ID" data-zh="下载说话人模型">Download Speaker ID</span>
+                                </button>
+                            </div>
+                            <div class="speaker-id-row speaker-count-row">
+                                <span class="speaker-id-hint" data-en="Speakers" data-zh="人数">Speakers</span>
+                                <select id="stt-speaker-count-select" class="format-select" onchange="onSpeakerIdToggleChange()">
+                                    <option value="-1" data-en="Auto" data-zh="自动">Auto</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                    <option value="5">5</option>
+                                    <option value="6">6</option>
+                                </select>
+                                <span class="speaker-id-hint" data-en="Detail" data-zh="精细度">Detail</span>
+                                <select id="stt-speaker-preset-select" class="format-select" onchange="onSpeakerIdToggleChange()">
+                                    <option value="accurate" data-en="Fine" data-zh="精细">Fine</option>
+                                    <option value="balanced" data-en="Medium" data-zh="适中" selected>Medium</option>
+                                    <option value="fast" data-en="Coarse" data-zh="粗略">Coarse</option>
+                                </select>
+                            </div>
+                            <div id="stt-speaker-status" class="speaker-id-hint"></div>
+                            <div id="stt-speaker-model-progress" style="display: none; margin-top: 10px;">
+                                <div class="progress-bar" style="height: 4px;"><div class="progress-fill" id="speaker-model-dl-fill" style="width: 0%"></div></div>
+                                <div style="font-size: 12px; color: var(--text-muted); margin-top: 5px; text-align: right;" id="speaker-model-dl-text">0%</div>
+                            </div>
+                        </div>
                     </div>
                 </section>
 

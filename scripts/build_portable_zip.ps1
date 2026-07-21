@@ -237,18 +237,20 @@ function Stage-Package {
         "run-gguf.ps1",
         "run-pytorch.cmd",
         "run-pytorch.ps1",
+        "speaker_diarization.py",
         "stt_engine.py",
         "stt_routes.py",
         "SYSTEM_OVERVIEW.md",
         "tts_routes.py",
         "utils.py",
-        "VERSION"
+        "VERSION",
+        "zh_confusion.py"
     )
     foreach ($file in $appFiles) {
         Copy-RelativeFile -SourceRoot $AppRoot -RelativePath $file -DestRoot $appDest
     }
 
-    foreach ($dir in @("bashi_tts_kernel", "engines", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
+    foreach ($dir in @("bashi_tts_kernel", "data", "engines", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
         Copy-RelativeDirectory -SourceRoot $AppRoot -RelativePath $dir -DestRoot $appDest
     }
     New-Item -ItemType Directory -Force -Path (Join-Path $appDest "models"), (Join-Path $appDest "static\audio"), (Join-Path $appDest "static\uploads") | Out-Null

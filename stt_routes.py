@@ -10,6 +10,7 @@ from flask import Blueprint, request, jsonify, Response, stream_with_context, se
 from werkzeug.utils import secure_filename
 
 from model_manager import ModelManager
+from speaker_diarization import SpeakerDiarizer, SpeakerTurn, assign_speakers_to_segments, speaker_label
 from engines.sherpa_sensevoice import SherpaSenseVoiceEngine
 from engines.sherpa_parakeet import SherpaParakeetEngine
 from utils import extract_audio_wav
@@ -21,6 +22,9 @@ UPLOAD_DIR = Path("static/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR = Path("models")
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+METRICS_DIR = Path(".stt_metrics")
+METRICS_DIR.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD_BYTES = int(os.environ.get("BASHI_STT_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
 
 model_manager = ModelManager(MODELS_DIR)
 
@@ -108,14 +112,24 @@ def acquire_engine(model_id=None):
             if not meta:
                 return None
 
-            model_name_lower = meta.get("name", "").lower()
-
-            if "parakeet" in model_name_lower:
-                engine_instance = SherpaParakeetEngine(model_dir)
-            else:
-                engine_instance = SherpaSenseVoiceEngine(model_dir)
-
             try:
+                model_name_lower = meta.get("name", "").lower()
+                model_id_lower = (model_id or "").lower()
+
+                if "parakeet" in model_id_lower or "parakeet" in model_name_lower:
+                    engine_instance = SherpaParakeetEngine(model_dir)
+                elif (
+                    "sensevoice" in model_id_lower
+                    or "sensevoice" in model_name_lower
+                    or "sense-voice" in model_id_lower
+                    or "sense-voice" in model_name_lower
+                ):
+                    engine_instance = SherpaSenseVoiceEngine(model_dir)
+                else:
+                    raise RuntimeError(
+                        f"Unsupported STT model engine for {model_id}: {meta.get('name', '')}"
+                    )
+
                 engine_instance.load_model()
                 current_engine_model_id = model_id
             except Exception as e:
@@ -138,7 +152,8 @@ def release_engine():
 def list_models():
     return jsonify({
         "installed": model_manager.list_installed(),
-        "available": model_manager.list_available()
+        "available": model_manager.list_available(),
+        "speaker_diarization": model_manager.get_speaker_diarization_status(),
     })
 
 @stt_bp.route("/download-model", methods=["POST"])
@@ -159,24 +174,140 @@ def download_model():
 
     return Response(stream_with_context(generate()), content_type='text/event-stream')
 
-def _process_transcription(job_id: str, file_path: Path, filename: str, language: str, model_id: str):
+
+@stt_bp.route("/download-speaker-model", methods=["POST"])
+def download_speaker_model():
+    data = request.json or {}
+    use_mirror = data.get("use_mirror", True)
+
+    def generate():
+        try:
+            for event in model_manager.download_speaker_diarization_model(use_mirror=use_mirror):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
+
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
+
+
+def _parse_bool(value) -> bool:
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_speaker_count(value) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return -1
+    if count < 1:
+        return -1
+    return min(count, 12)
+
+
+def _speaker_turn_to_dict(turn: SpeakerTurn) -> dict:
+    return {
+        "start": turn.start,
+        "end": turn.end,
+        "speaker": turn.speaker,
+        "speaker_label": speaker_label(turn.speaker),
+    }
+
+
+def _parse_speaker_preset(value) -> str | None:
+    if value is None:
+        return None
+    preset = str(value).strip().lower()
+    if preset not in {"accurate", "balanced", "fast"}:
+        return None
+    return preset
+
+
+def _append_launch_log(message: str) -> None:
+    try:
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open("launch_log.txt", "a", encoding="utf-8") as log_file:
+            log_file.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        pass
+
+
+def _dict_or_empty(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _write_job_metrics(job_id: str) -> None:
+    """Persist timing metrics outside launch_log.txt.
+
+    run_portable.ps1 redirects app stderr to launch_log.txt for the whole app
+    lifetime.  On Windows that file can be locked by the parent cmd process, so
+    appending diagnostics there is best-effort only.  This JSON file is the
+    durable source for post-run Speaker ID analysis.
+    """
+    try:
+        job = stt_jobs.get(job_id)
+        if not job:
+            return
+        payload = {
+            "job_id": job_id,
+            "filename": job.get("filename"),
+            "model_id": job.get("model_id"),
+            "status": job.get("status"),
+            "segment_count": len(job.get("segments") or []),
+            "speaker_id_enabled": job.get("speaker_id_enabled"),
+            "speaker_count": job.get("speaker_count"),
+            "speaker_preset": job.get("speaker_preset"),
+            "speaker_turn_count": len(job.get("speaker_turns") or []),
+            "speaker_error": job.get("speaker_error"),
+            "timing": _dict_or_empty(job.get("timing")),
+            "speaker_metrics": _dict_or_empty(job.get("speaker_metrics")),
+            "created_at": job.get("created_at"),
+            "written_at": time.time(),
+        }
+        dest = METRICS_DIR / f"{job_id}.json"
+        tmp = METRICS_DIR / f"{job_id}.json.tmp"
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(dest)
+    except Exception as e:
+        _append_launch_log(f"[STT metrics] job={job_id} failed to write metrics: {e}")
+
+
+def _process_transcription(
+    job_id: str,
+    file_path: Path,
+    filename: str,
+    language: str,
+    model_id: str,
+    speaker_id_enabled: bool = False,
+    speaker_count: int = -1,
+    speaker_preset: str | None = None,
+):
     """Background thread to process audio extraction and transcription."""
     stt_jobs[job_id]["status"] = "extracting_audio"
+    stt_jobs[job_id].setdefault("timing", {})
+    stt_jobs[job_id].setdefault("speaker_metrics", {})
     wav_path = UPLOAD_DIR / f"{job_id}.wav"
+    job_started_at = time.monotonic()
     
     try:
         # Step 1: Extract Audio
+        step_started_at = time.monotonic()
         extract_audio_wav(file_path, wav_path)
+        stt_jobs[job_id]["timing"]["audio_extract_seconds"] = round(time.monotonic() - step_started_at, 3)
         
         # Step 2: Ensure Engine is ready (also increments ref count)
         stt_jobs[job_id]["status"] = "loading_model"
+        step_started_at = time.monotonic()
         engine = acquire_engine(model_id)
         if not engine:
             raise RuntimeError("Engine could not be loaded. Please ensure models are installed.")
+        stt_jobs[job_id]["timing"]["model_load_seconds"] = round(time.monotonic() - step_started_at, 3)
 
         # Step 3: Transcribe
         try:
             stt_jobs[job_id]["status"] = "transcribing"
+            step_started_at = time.monotonic()
             for segment in engine.transcribe_stream(wav_path, language=language):
                 seg_dict = {
                     "index": segment.index,
@@ -185,11 +316,72 @@ def _process_transcription(job_id: str, file_path: Path, filename: str, language
                     "text": segment.text
                 }
                 stt_jobs[job_id]["segments"].append(seg_dict)
+            stt_jobs[job_id]["timing"]["asr_seconds"] = round(time.monotonic() - step_started_at, 3)
         finally:
             release_engine()
 
-        # Step 4: Done
+        # Step 4: Optional speaker diarization
+        if speaker_id_enabled:
+            stt_jobs[job_id]["status"] = "diarizing"
+            stt_jobs[job_id]["speaker_progress"] = 0.0
+            diarizer = None
+            try:
+                def progress_callback(num_processed_chunk: int, num_total_chunks: int) -> int:
+                    if num_total_chunks:
+                        stt_jobs[job_id]["speaker_progress"] = round(
+                            (num_processed_chunk / num_total_chunks) * 100,
+                            1,
+                        )
+                    return 0
+
+                diarizer = SpeakerDiarizer(MODELS_DIR, preset=speaker_preset)
+                turns = diarizer.diarize(
+                    wav_path,
+                    num_speakers=speaker_count,
+                    progress_callback=progress_callback,
+                )
+                stt_jobs[job_id]["speaker_metrics"] = diarizer.last_metrics
+                stt_jobs[job_id]["speaker_turns"] = [_speaker_turn_to_dict(turn) for turn in turns]
+                stt_jobs[job_id]["segments"] = assign_speakers_to_segments(
+                    stt_jobs[job_id]["segments"],
+                    turns,
+                )
+                stt_jobs[job_id]["speaker_progress"] = 100.0
+                _append_launch_log(
+                    "[STT Speaker ID] "
+                    f"job={job_id} preset={diarizer.last_metrics.get('preset')} "
+                    f"threads={diarizer.last_metrics.get('num_threads')} "
+                    f"speakers={speaker_count} turns={len(turns)} "
+                    f"total={diarizer.last_metrics.get('total_seconds')}s "
+                    f"pre_callback={diarizer.last_metrics.get('pre_callback_seconds')}s "
+                    f"callback={diarizer.last_metrics.get('callback_seconds')}s "
+                    f"post_callback={diarizer.last_metrics.get('post_callback_seconds')}s "
+                    f"rtf={diarizer.last_metrics.get('rtf')}"
+                )
+            except Exception as e:
+                # Speaker ID is an optional enhancement.  A diarization failure
+                # must not discard a successful transcript, especially for long
+                # meeting recordings where diarization is the riskiest step.
+                stt_jobs[job_id]["speaker_error"] = str(e)
+                stt_jobs[job_id]["speaker_progress"] = None
+                if diarizer is not None:
+                    stt_jobs[job_id]["speaker_metrics"] = _dict_or_empty(
+                        getattr(diarizer, "last_metrics", {})
+                    )
+                _append_launch_log(f"[STT Speaker ID] job={job_id} failed: {e}")
+
+        # Step 5: Done
+        stt_jobs[job_id]["timing"]["total_job_seconds"] = round(time.monotonic() - job_started_at, 3)
         stt_jobs[job_id]["status"] = "done"
+        _write_job_metrics(job_id)
+        _append_launch_log(
+            "[STT] "
+            f"job={job_id} status=done segments={len(stt_jobs[job_id]['segments'])} "
+            f"extract={stt_jobs[job_id]['timing'].get('audio_extract_seconds')}s "
+            f"load={stt_jobs[job_id]['timing'].get('model_load_seconds')}s "
+            f"asr={stt_jobs[job_id]['timing'].get('asr_seconds')}s "
+            f"total={stt_jobs[job_id]['timing'].get('total_job_seconds')}s"
+        )
         
     except Exception as e:
         stt_jobs[job_id]["status"] = "error"
@@ -224,12 +416,26 @@ def transcribe():
         if "file" not in request.files:
             return jsonify({"error": "No file part"}), 400
 
+        if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+            max_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+            return jsonify({"error": f"File too large. Maximum upload size is {max_mb} MB."}), 413
+
         file = request.files["file"]
         if file.filename == "":
             return jsonify({"error": "No selected file"}), 400
 
         language = request.form.get("language", "auto")
         model_id = request.form.get("model_id")
+        speaker_id_enabled = _parse_bool(request.form.get("speaker_id"))
+        if os.environ.get("BASHI_SPEAKER_ID_UI") != "1":
+            speaker_id_enabled = False
+        speaker_count = _parse_speaker_count(request.form.get("speaker_count"))
+        speaker_preset = _parse_speaker_preset(request.form.get("speaker_preset"))
+
+        if speaker_id_enabled and not model_manager.is_speaker_diarization_complete():
+            return jsonify({
+                "error": "Speaker ID model is not downloaded. Download it from the STT panel first."
+            }), 400
 
         job_id = uuid.uuid4().hex
         safe_filename = secure_filename(file.filename) or f"upload_{job_id}.bin"
@@ -242,6 +448,14 @@ def transcribe():
             "model_id": model_id,
             "status": "pending",
             "segments": [],
+            "speaker_id_enabled": speaker_id_enabled,
+            "speaker_count": speaker_count,
+            "speaker_preset": speaker_preset,
+            "speaker_turns": [],
+            "speaker_progress": None,
+            "speaker_error": None,
+            "speaker_metrics": {},
+            "timing": {},
             "error": None,
             "created_at": time.time(),
         }
@@ -249,7 +463,16 @@ def transcribe():
         # Start background processing (_job_active is cleared in the worker's finally)
         thread = threading.Thread(
             target=_process_transcription,
-            args=(job_id, file_path, file.filename, language, model_id),
+            args=(
+                job_id,
+                file_path,
+                file.filename,
+                language,
+                model_id,
+                speaker_id_enabled,
+                speaker_count,
+                speaker_preset,
+            ),
             daemon=True,
         )
         thread.start()
@@ -275,19 +498,23 @@ def get_progress_sse(job_id):
             if not job:
                 yield f"data: {json.dumps({'status': 'error', 'error': 'job not found'})}\n\n"
                 break
-                
+
             status = job["status"]
             segments = job["segments"]
-            
+
             # Send new segments only
             new_segments = segments[last_index:]
-            if new_segments or status in ["error", "done", "extracting_audio", "loading_model"]:
+            if new_segments or status in ["error", "done", "extracting_audio", "loading_model", "diarizing"]:
                 event_data = {
                     "status": status,
                     "new_segments": new_segments
                 }
                 if job.get("error"):
                     event_data["error"] = job["error"]
+                if job.get("speaker_progress") is not None:
+                    event_data["speaker_progress"] = job["speaker_progress"]
+                if job.get("speaker_error"):
+                    event_data["speaker_error"] = job["speaker_error"]
                     
                 yield f"data: {json.dumps(event_data)}\n\n"
                 last_index = len(segments)
@@ -355,6 +582,21 @@ def _smooth_join(buf_text: str, seg_text: str) -> str:
     return buf_text + " " + seg_text
 
 
+def _has_speaker(seg: dict) -> bool:
+    return seg.get("speaker") is not None
+
+
+def _format_speaker_prefix(seg: dict, ui_lang: str = "en") -> str:
+    if not _has_speaker(seg):
+        return ""
+    return f"{speaker_label(int(seg['speaker']), ui_lang)}: "
+
+
+def _format_segment_text(seg: dict, text: str | None = None, ui_lang: str = "en") -> str:
+    body = seg.get("text", "") if text is None else text
+    return _format_speaker_prefix(seg, ui_lang) + body
+
+
 def merge_short_segments(segments: list, max_duration: float = 7.0) -> list:
     """Merge short subtitle fragments into reader-friendly cards.
 
@@ -393,14 +635,25 @@ def merge_short_segments(segments: list, max_duration: float = 7.0) -> list:
         fits = len(combined) <= char_limit
         close = gap < 1.5
         duration_ok = combined_dur <= max_duration
+        same_speaker = (
+            not _has_speaker(buf)
+            or not _has_speaker(seg)
+            or buf.get("speaker") == seg.get("speaker")
+        )
 
-        if (buf_short or seg_tiny) and fits and close and duration_ok:
-            merged[-1] = {
+        if same_speaker and (buf_short or seg_tiny) and fits and close and duration_ok:
+            merged_seg = {
                 "start": buf["start"],
                 "end": seg["end"],
                 "text": combined,
                 "index": buf["index"],
             }
+            for key in ("language", "speaker", "speaker_label"):
+                if key in buf:
+                    merged_seg[key] = buf[key]
+                elif key in seg:
+                    merged_seg[key] = seg[key]
+            merged[-1] = merged_seg
         else:
             merged.append(dict(seg))
 
@@ -521,6 +774,7 @@ def export_result(job_id):
         return jsonify({"error": "Job not found or not finished"}), 404
 
     segments = job["segments"]
+    include_speakers = bool(job.get("speaker_id_enabled"))
     # Merge short fragments for subtitle formats — both Parakeet (English,
     # many tiny VAD segments) and SenseVoice (Chinese, standalone punctuation
     # fragments like 。) benefit from merging into reader-friendly cards.
@@ -531,7 +785,10 @@ def export_result(job_id):
     suffix = "转写" if ui_lang == "zh" else "transcription"
 
     if format_type == "txt":
-        content = "\n".join(seg["text"] for seg in segments)
+        if include_speakers:
+            content = "\n".join(_format_segment_text(seg, ui_lang=ui_lang) for seg in segments)
+        else:
+            content = "\n".join(seg["text"] for seg in segments)
         mimetype = "text/plain"
         ext = "txt"
     elif format_type == "srt":
@@ -540,7 +797,7 @@ def export_result(job_id):
         for seg in segments:
             text = normalize_subtitle_text(seg["text"])
             if text:
-                subtitle_segments.append((seg, text))
+                subtitle_segments.append((seg, _format_segment_text(seg, text=text, ui_lang=ui_lang) if include_speakers else text))
         for i, (seg, text) in enumerate(subtitle_segments, 1):
             start = format_timestamp(seg["start"], ",")
             end = format_timestamp(seg["end"], ",")
@@ -554,6 +811,8 @@ def export_result(job_id):
             text = normalize_subtitle_text(seg["text"])
             if not text:
                 continue
+            if include_speakers:
+                text = _format_segment_text(seg, text=text, ui_lang=ui_lang)
             start = format_timestamp(seg["start"], ".")
             end = format_timestamp(seg["end"], ".")
             lines.append(f"{start} --> {end}\n{text}\n")
