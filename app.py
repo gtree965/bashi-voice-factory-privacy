@@ -7,7 +7,7 @@ import argparse
 import os
 import sys
 
-from flask import Flask, render_template
+from flask import Flask, jsonify, render_template
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -21,10 +21,14 @@ from utils import cleanup_old_files  # noqa: E402
 
 
 def create_app() -> Flask:
-    from stt_routes import UPLOAD_DIR, stt_bp
+    from stt_routes import MAX_UPLOAD_BYTES, UPLOAD_DIR, stt_bp
     from tts_routes import OUTPUT_DIR, VERSION, tts_bp
 
     app = Flask(__name__)
+    # Transport-level backstop: also catches chunked uploads that carry no
+    # Content-Length. 1 MiB slack covers the multipart envelope so the
+    # friendly per-route check in stt_routes stays the user-facing limit.
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES + 1024 * 1024
     app.config["BASHI_OUTPUT_DIR"] = OUTPUT_DIR
     app.config["BASHI_UPLOAD_DIR"] = UPLOAD_DIR
     app.config["BASHI_VERSION"] = VERSION
@@ -35,6 +39,11 @@ def create_app() -> Flask:
     @app.route("/")
     def index():
         return render_template("index.html", version=VERSION)
+
+    @app.errorhandler(413)
+    def request_entity_too_large(error):
+        max_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+        return jsonify({"error": f"File too large. Maximum upload size is {max_mb} MB."}), 413
 
     return app
 
