@@ -240,15 +240,6 @@ function shouldUseLongSynthesis(text) {
         || sentenceCount >= SINGLE_SYNTHESIS_LIMITS.latinSentences;
 }
 
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
 function getStylePreset(presetId = state.selectedStylePreset) {
     return STYLE_PRESETS.find(preset => preset.id === presetId) || STYLE_PRESETS[0];
 }
