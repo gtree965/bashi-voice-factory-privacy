@@ -3,11 +3,11 @@
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**Version:** 0.1.2
+**Version:** 0.1.3
 
 A fully offline desktop web app for high-quality text-to-speech and speech-to-text. After the one-time first-launch download, **everything runs on your own machine** — TTS synthesis, audio export, transcription, and storage. No audio data ever leaves your computer.
 
@@ -17,6 +17,14 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 **License:** [MIT License](LICENSE)
 **Source code:** <https://github.com/gtree965/bashi-voice-factory-privacy>
 **Download:** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [files.fm mirror](https://files.fm/u/juvstxmrez)
+
+---
+
+## 🆕 What's New in v0.1.3
+
+- **Safer STT defaults:** SenseVoice Small is now the default multilingual STT model, the Speaker ID UI is disabled, and Paraformer Chinese Large has been removed from the product.
+- **Upload and job-state hardening:** a server-side upload ceiling (2 GB by default) rejects oversized requests, and shared `stt_jobs` state is now lock-protected across background work and API reads.
+- **Reliable streaming:** affected frontend SSE readers now buffer data across network chunks, preventing split JSON lines or frames from being dropped or misparsed.
 
 ---
 
@@ -156,7 +164,7 @@ Full log path: `bashi-privacy-app\launch_log.txt`
 ## 📦 What's in the Zip
 
 ```
-bashi-voice-factory-privacy-v0.1.2/
+bashi-voice-factory-privacy-v0.1.3/
 ├── Start_启动.bat                                       ← double-click here
 ├── Start_CPU_only_仅CPU启动.bat                         ← force CPU mode (entry-level iGPU A/B)
 ├── README.md                                            ← this file

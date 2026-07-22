@@ -3,11 +3,11 @@
 # 巴适声工厂 · 隐私版 (Bashi Voice Factory Privacy Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**版本：** 0.1.2
+**版本：** 0.1.3
 
 完全离线运行的本地语音工厂网页应用。首次启动联网下载完依赖与模型之后，**所有文字转语音、语音转文字、音频生成、文件保存都在你自己的电脑上完成**，没有任何音频数据上传云端。
 
@@ -17,6 +17,14 @@
 **许可：** [MIT License](LICENSE)
 **源码：** <https://github.com/gtree965/bashi-voice-factory-privacy>
 **下载：** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [files.fm 镜像](https://files.fm/u/juvstxmrez)
+
+---
+
+## 🆕 v0.1.3 更新内容
+
+- **更稳妥的 STT 默认方案：** SenseVoice Small 现为默认多语种 STT 模型，Speaker ID 界面已停用，并从产品中移除了 Paraformer 中文大模型。
+- **上传与任务状态加固：** 新增服务端上传硬上限（默认 2 GB），并为共享 `stt_jobs` 状态加入线程锁，覆盖后台任务与 API 读取路径。
+- **更可靠的流式处理：** 受影响的前端 SSE 读取器现在会跨网络 chunk 缓冲数据，避免被拆开的 JSON 行或事件帧丢失、误解析。
 
 ---
 
@@ -156,7 +164,7 @@
 ## 📦 zip 包目录结构
 
 ```
-bashi-voice-factory-privacy-v0.1.2/
+bashi-voice-factory-privacy-v0.1.3/
 ├── Start_启动.bat                                       ← 双击这里
 ├── Start_CPU_only_仅CPU启动.bat                         ← 强制 CPU 模式（入门集显 A/B 对比用）
 ├── README.md                                            ← 英文文档
