@@ -73,6 +73,7 @@ Important startup files:
 - `run_portable.bat`
 - `download_gguf_model.py`
 - `download_cuda_runtime.py`
+- `download_utils.py`
 
 ### TTS
 
@@ -131,6 +132,7 @@ bashi-privacy-app/
 ├─ audio_encoding.py
 ├─ download_gguf_model.py
 ├─ download_cuda_runtime.py
+├─ download_utils.py
 ├─ requirements.txt
 ├─ VERSION
 ├─ data/
@@ -224,6 +226,9 @@ bashi-privacy-app/
   - model completeness checks
   - byte-progress download generator with mirror fallback
   - tar extraction for Speaker ID assets
+
+- `download_utils.py`
+  - dependency-free SHA256 file hashing shared by all three download paths
 
 - `stt_engine.py`
   - shared `Segment` and `TranscriptionResult` dataclasses
@@ -497,6 +502,7 @@ Start with:
 - `run_portable.bat`
 - `download_gguf_model.py`
 - `download_cuda_runtime.py`
+- `download_utils.py`
 
 When adding a runtime Python module or data directory, make sure the portable staging script copies it.
 

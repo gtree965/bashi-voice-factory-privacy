@@ -21,7 +21,6 @@ extra packages are installed.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import platform
@@ -33,6 +32,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Generator, Iterable, Mapping, Optional
+
+from download_utils import SHA256_CHUNK_SIZE, sha256_file
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -53,7 +54,6 @@ LOCAL_MANIFEST_FILENAME = "cuda_runtime_manifest.json"
 IDLE_TIMEOUT_SECONDS = 30.0
 PROGRESS_INTERVAL_SECONDS = 0.5
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
-SHA_CHUNK_SIZE = 1024 * 1024
 
 
 class CudaRuntimeError(RuntimeError):
@@ -88,14 +88,6 @@ def _quote_path(path: str) -> str:
 def modelscope_resolve_url(repo_id: str, path: str, revision: str = "master") -> str:
     encoded_repo = "/".join(urllib.parse.quote(part) for part in repo_id.strip("/").split("/"))
     return f"https://modelscope.cn/models/{encoded_repo}/resolve/{revision}/{_quote_path(path)}"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(SHA_CHUNK_SIZE), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _request(url: str, resume_at: int = 0) -> urllib.request.Request:
@@ -272,7 +264,7 @@ def _extract_zip_archive(archive_path: Path, target_dir: Path, extract_items: li
             dest.parent.mkdir(parents=True, exist_ok=True)
             tmp = dest.with_suffix(dest.suffix + ".extracting")
             with archive.open(member) as source, tmp.open("wb") as output:
-                shutil.copyfileobj(source, output, SHA_CHUNK_SIZE)
+                shutil.copyfileobj(source, output, SHA256_CHUNK_SIZE)
 
             expected_sha = item.get("sha256")
             if expected_sha and sha256_file(tmp).lower() != expected_sha.lower():

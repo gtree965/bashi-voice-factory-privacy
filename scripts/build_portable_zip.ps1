@@ -222,6 +222,7 @@ function Stage-Package {
         "backend_probe.py",
         "download_cuda_runtime.py",
         "download_gguf_model.py",
+        "download_utils.py",
         "LICENSE",
         "local_tts_engine.py",
         "local_tts_engine_gguf.py",

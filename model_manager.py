@@ -1,10 +1,11 @@
-import hashlib
 import os
 import tarfile
 import time
 import urllib.request
 from pathlib import Path
 from typing import Generator, Optional
+
+from download_utils import sha256_file
 
 
 IDLE_TIMEOUT_SECONDS = 30.0
@@ -427,7 +428,7 @@ class ModelManager:
             )
 
         if expected_sha256:
-            actual = self._sha256_file(part)
+            actual = sha256_file(part)
             if actual.lower() != expected_sha256.lower():
                 part.unlink(missing_ok=True)
                 raise RuntimeError(
@@ -482,11 +483,3 @@ class ModelManager:
             "message": f"Downloading {fname}... {mb_done:.1f} MB{mb_total_text}",
             "message_zh": f"正在下载 {fname}... {mb_done:.1f} MB{mb_total_text}",
         }
-
-    @staticmethod
-    def _sha256_file(path: Path) -> str:
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 64), b""):
-                h.update(chunk)
-        return h.hexdigest()
