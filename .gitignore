@@ -54,6 +54,7 @@ desktop.ini
 总结报告_*.html
 *_Comprehensive_Evaluation_Report.html
 roadmap_review_report_by_*.md
+*.srt
 
 # Tests stay local-only until fixtures are ready for public CI.
 tests/
