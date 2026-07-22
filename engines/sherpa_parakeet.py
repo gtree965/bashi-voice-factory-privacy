@@ -1,13 +1,11 @@
-import numpy as np
-from pathlib import Path
-from typing import List, Generator
+from typing import List
 
 try:
     import sherpa_onnx
 except ImportError:
     sherpa_onnx = None
 
-from stt_engine import SttEngine, Segment
+from stt_engine import Segment, SttEngine
 
 
 class SherpaParakeetEngine(SttEngine):
@@ -21,9 +19,9 @@ class SherpaParakeetEngine(SttEngine):
     audio, then transcribes each segment with Parakeet.
     """
 
-    def __init__(self, model_dir: Path, num_threads: int = 4):
-        super().__init__(model_dir, num_threads)
-        self._recognizer = None
+    VAD_THRESHOLD = 0.3
+    CHAR_LIMIT = 80
+    ENGINE_LABEL = "Parakeet"
 
     def load_model(self):
         """Load Parakeet TDT transducer model (encoder + decoder + joiner)."""
@@ -119,132 +117,5 @@ class SherpaParakeetEngine(SttEngine):
 
         return lines
 
-    def transcribe_stream(
-        self,
-        audio_path: Path,
-        language: str = "auto"
-    ) -> Generator[Segment, None, None]:
-        """
-        Transcribe audio using VAD + Parakeet TDT:
-        1. Silero VAD detects speech segments with precise timestamps
-        2. Parakeet transcribes each speech segment (English-optimized)
-        3. Long segments are split into subtitle-sized chunks
-        """
-        if not self.is_loaded():
-            self.load_model()
-
-        import wave
-
-        # Find the VAD model
-        vad_model_path = self.model_dir.parent / "silero_vad.onnx"
-        if not vad_model_path.exists():
-            for candidate in [Path("models") / "silero_vad.onnx"]:
-                if candidate.exists():
-                    vad_model_path = candidate
-                    break
-
-        if not vad_model_path.exists():
-            raise FileNotFoundError(
-                f"VAD model not found at {vad_model_path}. "
-                "Please ensure silero_vad.onnx is in the models directory."
-            )
-
-        with wave.open(str(audio_path), "rb") as wf:
-            sample_rate = wf.getframerate()
-            num_channels = wf.getnchannels()
-            sample_width = wf.getsampwidth()
-            num_frames = wf.getnframes()
-
-            if sample_rate != 16000:
-                raise ValueError(f"Expected 16kHz audio, got {sample_rate}Hz")
-
-            raw = wf.readframes(num_frames)
-            if sample_width == 2:
-                samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-            elif sample_width == 4:
-                samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
-            else:
-                raise ValueError(f"Unsupported sample width: {sample_width}")
-
-            if num_channels > 1:
-                samples = samples[::num_channels]
-
-        # Configure VAD
-        vad_config = sherpa_onnx.VadModelConfig()
-        vad_config.silero_vad.model = str(vad_model_path)
-        vad_config.silero_vad.min_silence_duration = 0.3
-        vad_config.silero_vad.min_speech_duration = 0.25
-        vad_config.silero_vad.threshold = 0.3
-        vad_config.silero_vad.max_speech_duration = 30.0
-        vad_config.sample_rate = sample_rate
-
-        window_size = vad_config.silero_vad.window_size
-        vad = sherpa_onnx.VoiceActivityDetector(
-            vad_config,
-            buffer_size_in_seconds=600
-        )
-
-        # Feed all audio through VAD
-        offset = 0
-        while offset < len(samples):
-            end = min(offset + window_size, len(samples))
-            chunk = samples[offset:end]
-            if len(chunk) < window_size:
-                chunk = np.concatenate([chunk, np.zeros(window_size - len(chunk), dtype=np.float32)])
-            vad.accept_waveform(chunk)
-            offset += window_size
-
-        vad.flush()
-
-        # Collect all speech segments from VAD
-        speech_segments = []
-        while not vad.empty():
-            seg = vad.front
-            start_sec = seg.start / sample_rate
-            seg_samples = np.array(seg.samples, dtype=np.float32)
-            end_sec = start_sec + len(seg_samples) / sample_rate
-            speech_segments.append((start_sec, end_sec, seg_samples))
-            vad.pop()
-
-        print(f"[Parakeet] VAD detected {len(speech_segments)} speech segments")
-
-        # Transcribe each speech segment with Parakeet
-        segment_index = 0
-        prev_end_time = 0.0
-
-        for seg_start, seg_end, seg_samples in speech_segments:
-            if len(seg_samples) < sample_rate * 0.2:
-                continue
-
-            stream = self._recognizer.create_stream()
-            stream.accept_waveform(sample_rate, seg_samples)
-            self._recognizer.decode_stream(stream)
-
-            text = stream.result.text.strip()
-            if not text:
-                continue
-
-            # Split long text into subtitle-sized chunks
-            sub_segments = self._split_text_into_segments(
-                text, seg_start, seg_end,
-                language, segment_index,
-                char_limit=80
-            )
-
-            for sub_seg in sub_segments:
-                # Clamp to prevent micro-overlaps between VAD segments
-                if sub_seg.start < prev_end_time:
-                    sub_seg.start = prev_end_time
-                if sub_seg.end <= sub_seg.start:
-                    sub_seg.end = sub_seg.start + 0.3
-                sub_seg.index = segment_index
-                prev_end_time = sub_seg.end
-                yield sub_seg
-                segment_index += 1
-
     def supported_languages(self) -> List[str]:
         return ["en"]
-
-    def cleanup(self):
-        self._recognizer = None
-        self._model = None

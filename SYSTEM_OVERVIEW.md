@@ -232,7 +232,8 @@ bashi-privacy-app/
 
 - `stt_engine.py`
   - shared `Segment` and `TranscriptionResult` dataclasses
-  - abstract STT engine interface
+  - shared 16 kHz WAV loading, Silero VAD, decode loop, and segment clamping
+  - per-engine VAD threshold, character limit, label, and text-processing hooks
 
 - `engines/sherpa_sensevoice.py`
   - SenseVoice + Silero VAD wrapper
