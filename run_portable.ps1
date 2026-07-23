@@ -175,7 +175,7 @@ if ($timeZone -like "*China*" -or $culture -like "zh-*") {
 
 Ensure-Pip
 
-$dependencyCheckCode = 'import importlib.metadata as m; [m.version(p) for p in ("Flask","imageio-ffmpeg","sherpa-onnx","gguf","onnx","onnxruntime-directml","sentencepiece","sounddevice","torch","transformers","qwen-tts")]'
+$dependencyCheckCode = 'import importlib.metadata as m; [m.version(p) for p in ("Flask","imageio-ffmpeg","sherpa-onnx","gguf","onnx","onnxruntime-directml","sentencepiece","sounddevice","torch","transformers","qwen-tts")]; import onnxruntime as ort, qwen_tts; ps=ort.get_available_providers(); assert "DmlExecutionProvider" in ps, f"Missing DML: {ps}"'
 $dependencyCheckExit = Invoke-NativeCommand { & $Python -c $dependencyCheckCode *> $null }
 if ($dependencyCheckExit -ne 0) {
     Write-Host ""
@@ -199,8 +199,26 @@ if ($dependencyCheckExit -ne 0) {
         }
         $extraArgs = @()
         if ($attempt -ge 2) { $extraArgs = @("--no-cache-dir") }
+        '[STEP] install Python build tooling' | Add-Content -Path $LogFile -Encoding utf8
         $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
-            & $Python -m pip install -r requirements.txt --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
+            & $Python -m pip install setuptools==79.0.1 wheel==0.45.1 --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
+        }
+        if ($pipInstallExit -ne 0) { continue }
+
+        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
+            & $Python -m pip install -r requirements.txt --no-build-isolation --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
+        }
+        if ($pipInstallExit -ne 0) { continue }
+
+        '[STEP] pip install qwen-tts --no-deps' | Add-Content -Path $LogFile -Encoding utf8
+        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
+            & $Python -m pip install qwen-tts==0.1.1 --no-deps --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
+        }
+        if ($pipInstallExit -ne 0) { continue }
+
+        '[STEP] force-reinstall onnxruntime-directml' | Add-Content -Path $LogFile -Encoding utf8
+        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
+            & $Python -m pip install --force-reinstall --no-deps onnxruntime-directml==1.23.0 --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
         }
         if ($pipInstallExit -eq 0) { break }
     }

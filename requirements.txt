@@ -10,7 +10,13 @@ transformers==4.57.3
 accelerate==1.12.0
 huggingface_hub==0.36.2
 safetensors==0.7.0
-qwen-tts==0.1.1
+# qwen-tts itself is installed with --no-deps by the portable launcher and
+# embed precheck so its bare onnxruntime dependency cannot overwrite DirectML.
+librosa==0.11.0
+torchaudio==2.10.0
+sox==1.5.0
+einops==0.8.2
+# gradio is only imported by qwen_tts.cli.demo; the app does not ship that UI.
 sherpa-onnx==1.12.39
 gguf==0.18.0
 onnx==1.21.0

@@ -143,16 +143,43 @@ else {
     Write-Host "pip already present; skipping bootstrap."
 }
 
+Invoke-Logged -Step "install build tooling" -LogPath (Join-Path $WorkDir "01b-build-tooling.log") -Command {
+    & $python -m pip install setuptools==79.0.1 wheel==0.45.1 --prefer-binary --no-warn-script-location --progress-bar off --timeout 120 --retries 3 @indexArgs
+}
+
 Invoke-Logged -Step "install requirements" -LogPath (Join-Path $WorkDir "02-pip-install.log") -Command {
-    & $python -m pip install -r (Join-Path $AppRoot "requirements.txt") --prefer-binary --no-warn-script-location --progress-bar off --timeout 120 --retries 3 @indexArgs
+    & $python -m pip install -r (Join-Path $AppRoot "requirements.txt") --no-build-isolation --prefer-binary --no-warn-script-location --progress-bar off --timeout 120 --retries 3 @indexArgs
+}
+
+Invoke-Logged -Step "install qwen-tts without dependencies" -LogPath (Join-Path $WorkDir "02b-qwen-tts-no-deps.log") -Command {
+    & $python -m pip install qwen-tts==0.1.1 --no-deps --prefer-binary --no-warn-script-location --progress-bar off --timeout 120 --retries 3 @indexArgs
+}
+
+Invoke-Logged -Step "restore DirectML package files last" -LogPath (Join-Path $WorkDir "02c-directml-force-reinstall.log") -Command {
+    & $python -m pip install --force-reinstall --no-deps onnxruntime-directml==1.23.0 --prefer-binary --no-warn-script-location --progress-bar off --timeout 120 --retries 3 @indexArgs
 }
 
 Invoke-Logged -Step "pip check" -LogPath (Join-Path $WorkDir "03-pip-check.log") -Command {
-    & $python -m pip check
+    $pipCheckOutput = @(& $python -m pip check 2>&1)
+    $pipCheckOutput | Write-Output
+    $unexpected = @($pipCheckOutput | Where-Object {
+        $_ -and $_ -notmatch '(?i)^qwen-tts .*requires (gradio|onnxruntime), which is not installed'
+    })
+    if ($unexpected.Count -gt 0) {
+        & $python -c "raise SystemExit(1)"
+    }
+    else {
+        Write-Output "Accepted: DirectML supplies onnxruntime; gradio is only used by the unbundled qwen_tts CLI demo."
+        & $python -c "raise SystemExit(0)"
+    }
 }
 
 Invoke-Logged -Step "import smoke" -LogPath (Join-Path $WorkDir "04-import-smoke.log") -Command {
     & $python -c "import flask, gguf, onnx, onnxruntime, sentencepiece, sounddevice, torch, transformers, qwen_tts; print('imports ok')"
+}
+
+Invoke-Logged -Step "DML provider check" -LogPath (Join-Path $WorkDir "04b-dml-provider-check.log") -Command {
+    & $python -c "import onnxruntime as ort; ps=ort.get_available_providers(); assert 'DmlExecutionProvider' in ps, f'Missing DML: {ps}'; print(ps)"
 }
 
 Invoke-Logged -Step "ETA unit test" -LogPath (Join-Path $WorkDir "05-eta-unittest.log") -Command {
