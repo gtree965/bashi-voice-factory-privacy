@@ -52,6 +52,34 @@ function Invoke-NativeCommandWithUtf8Log {
     }
 }
 
+function Read-LanBindHost {
+    param(
+        [int]$TimeoutSeconds = 10,
+        [scriptblock]$KeyAvailable = { [Console]::KeyAvailable },
+        [scriptblock]$ReadKey = { [Console]::ReadKey($true).KeyChar },
+        [scriptblock]$Wait = { param([int]$Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+    )
+
+    $selectedHost = "127.0.0.1"
+    try {
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        while ((Get-Date) -lt $deadline) {
+            if (& $KeyAvailable) {
+                $key = & $ReadKey
+                if ($key -match '^[Yy]$') {
+                    $selectedHost = "0.0.0.0"
+                }
+                break
+            }
+            & $Wait 200
+        }
+    }
+    catch {
+        # Redirected stdin and hosts without a console safely keep the default.
+    }
+    return $selectedHost
+}
+
 function Add-PthEntry {
     param(
         [Parameter(Mandatory = $true)][string]$Entry
@@ -292,10 +320,9 @@ if (-not $BindHost) {
     Write-Host "DO YOU WANT TO ALLOW OTHER DEVICES ON YOUR NETWORK TO ACCESS THIS SERVER?"
     Write-Host "是否允许局域网内其他设备（如手机、平板）访问本服务器？"
     Write-Host '[Y] Yes / 允许 (Host on 0.0.0.0)'
-    Write-Host '[N] No / 拒绝 (Host on 127.0.0.1 - Default / 默认)'
+    Write-Host '[N] No / 仅本机 (127.0.0.1) — 10 秒未选择默认 N / defaults to N in 10s'
     Write-Host "========================================================"
-    $choice = Read-Host "Select / 请选择 [y/N]"
-    $BindHost = if ($choice -match "^[Yy]$") { "0.0.0.0" } else { "127.0.0.1" }
+    $BindHost = Read-LanBindHost
 }
 
 Write-Host ""
