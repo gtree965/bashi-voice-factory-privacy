@@ -520,6 +520,7 @@ def _run_isolated_probe(
     ]
     child_env = dict(os.environ)
     child_env["PYTHONUTF8"] = "1"
+    child_env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     try:
         result = subprocess.run(
             command,
@@ -545,7 +546,13 @@ def _run_isolated_probe(
             continue
         try:
             payload = json.loads(line[len(PROBE_RESULT_PREFIX) :])
-            return ProbeOutcome(bool(payload["success"]), str(payload["reason"]))
+            success = bool(payload["success"])
+            reason = str(payload["reason"])
+            if not success:
+                stderr_tail = _probe_output_tail(None, result.stderr)
+                if stderr_tail:
+                    reason += f" Stderr tail: {stderr_tail}"
+            return ProbeOutcome(success, reason)
         except Exception as exc:
             return ProbeOutcome(
                 False,

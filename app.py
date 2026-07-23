@@ -3,8 +3,14 @@ Bashi Voice Factory Privacy Edition
 Flask-based local TTS/STT app with Qwen3 local TTS and sherpa-onnx STT.
 """
 
-import argparse
 import os
+
+# Work around OpenMP Error #15 when torch's libiomp5md and ggml's libomp140
+# meet in one process. This is Intel's documented duplicate-runtime workaround
+# and only has practical effect when ggml falls back to its CPU path.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+import argparse
 import sys
 
 from flask import Flask, jsonify, render_template

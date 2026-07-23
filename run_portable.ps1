@@ -314,6 +314,9 @@ Write-Host "Press Ctrl+C to stop the server."
 Write-Host "按 Ctrl+C 可停止服务器。"
 Write-Host ""
 
+# Prevent OpenMP Error #15 if torch and the GGUF CPU path load different OpenMP runtimes.
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
+
 ('[STEP] Starting app.py with host={0} port={1}' -f $BindHost, $Port) | Add-Content -Path $LogFile -Encoding utf8
 $pythonCommand = "`"$Python`" app.py --host `"$BindHost`" --port `"$Port`" 2>> `"$LogFile`""
 & cmd.exe /d /c $pythonCommand
