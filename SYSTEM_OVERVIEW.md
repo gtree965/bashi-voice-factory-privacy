@@ -26,6 +26,9 @@ Flask app (app.py)
   |     +-- backend status / ETA / CUDA add-on routes
   |     +-- local_tts_engine.py backend selector
   |     |     |
+  |     |     +-- local_tts_service_base.py
+  |     |     |     +-- shared speaker registry, locks, errors, and normalization
+  |     |     |
   |     |     +-- local_tts_engine_gguf.py
   |     |     |     +-- Qwen3-TTS-GGUF runtime
   |     |     |     +-- Vulkan / CUDA / CPU ggml backend
@@ -121,6 +124,7 @@ bashi-privacy-app/
 ├─ tts_routes.py
 ├─ stt_routes.py
 ├─ local_tts_engine.py
+├─ local_tts_service_base.py
 ├─ local_tts_engine_gguf.py
 ├─ local_tts_engine_pytorch.py
 ├─ local_voice_catalog.py
@@ -189,6 +193,9 @@ bashi-privacy-app/
 
 - `local_tts_engine.py`
   - imports the active TTS service according to `USE_GGUF_BACKEND`
+
+- `local_tts_service_base.py`
+  - owns shared service state, speaker lookup, exception types, and audio normalization
 
 - `local_tts_engine_gguf.py`
   - wraps the GGUF runtime under `vulkan_backend_spike/Qwen3-TTS-GGUF`

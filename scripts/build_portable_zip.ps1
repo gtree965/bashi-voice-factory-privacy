@@ -227,6 +227,7 @@ function Stage-Package {
         "local_tts_engine.py",
         "local_tts_engine_gguf.py",
         "local_tts_engine_pytorch.py",
+        "local_tts_service_base.py",
         "local_voice_catalog.py",
         "model_manager.py",
         "PRIVACY.md",

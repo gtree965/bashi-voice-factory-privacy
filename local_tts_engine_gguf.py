@@ -1,5 +1,4 @@
 import gc
-import json
 import os
 import queue
 import re
@@ -11,8 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
-from audio_encoding import peak_normalize_audio, write_mp3
-from local_voice_catalog import build_voice_catalog
+from audio_encoding import write_mp3
+from local_tts_service_base import LocalTTSBusyError, LocalTTSError, LocalTTSServiceBase
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -28,7 +27,6 @@ GGUF_LLM_USE_GPU = os.environ.get("GGUF_LLM_USE_GPU", "1") != "0"
 GGUF_VERBOSE = os.environ.get("GGUF_VERBOSE", "1") != "0"
 GGUF_DECODER_READY_TIMEOUT = float(os.environ.get("GGUF_DECODER_READY_TIMEOUT", "60"))
 
-SPEAKERS_PATH = APP_ROOT / "bashi_tts_kernel" / "speakers.json"
 OUTPUT_DIR = APP_ROOT / "static" / "audio"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -94,52 +92,7 @@ REFERENCE_ONLY_RE = re.compile(
 )
 
 
-class LocalTTSError(RuntimeError):
-    pass
-
-
-class LocalTTSBusyError(LocalTTSError):
-    pass
-
-
-class LocalTTSService:
-    def __init__(self):
-        self._engine = None
-        self._state = "unloaded"
-        self._state_lock = threading.RLock()
-        self._busy_lock = threading.Lock()
-        self._load_error = None
-        self._speakers = self._load_speakers()
-
-    def _load_speakers(self) -> dict:
-        if not SPEAKERS_PATH.exists():
-            raise LocalTTSError(f"Missing speakers registry: {SPEAKERS_PATH}")
-
-        with SPEAKERS_PATH.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-
-        speakers = data.get("speakers", [])
-        if not speakers:
-            raise LocalTTSError("speakers.json does not contain any speakers")
-
-        by_id = {}
-        alias_to_id = {}
-        for speaker in speakers:
-            speaker_id = speaker["id"]
-            by_id[speaker_id] = speaker
-            alias_to_id[speaker_id.lower()] = speaker_id
-            for alias in speaker.get("aliases", []):
-                alias_to_id[alias.lower()] = speaker_id
-
-        return {
-            "default_speaker": data.get("default_speaker", speakers[0]["id"]),
-            "by_id": by_id,
-            "alias_to_id": alias_to_id,
-        }
-
-    def get_voice_catalog(self) -> dict:
-        return build_voice_catalog(self._speakers)
-
+class LocalTTSService(LocalTTSServiceBase):
     def _ensure_loaded(self):
         with self._state_lock:
             if self._state == "ready" and self._engine is not None:
@@ -181,9 +134,6 @@ class LocalTTSService:
                 raise
             return self._engine
 
-    def warmup(self):
-        self._ensure_loaded()
-
     def shutdown(self):
         with self._state_lock:
             engine = self._engine
@@ -200,13 +150,6 @@ class LocalTTSService:
             del engine
 
         gc.collect()
-
-    def resolve_speaker(self, requested_id: str | None) -> dict:
-        speaker_id = requested_id or self._speakers["default_speaker"]
-        canonical_id = self._speakers["alias_to_id"].get(speaker_id.lower())
-        if canonical_id is None:
-            raise LocalTTSError(f"Unknown local speaker: {speaker_id}")
-        return self._speakers["by_id"][canonical_id]
 
     def resolve_language(self, speaker: dict) -> str:
         language_map = {
@@ -233,9 +176,6 @@ class LocalTTSService:
             sub_top_p=0.85,
             max_steps=450,
         )
-
-    def _normalize_generated_audio(self, audio: np.ndarray) -> np.ndarray:
-        return peak_normalize_audio(audio)
 
     def _generate_wav_no_lock(
         self,
