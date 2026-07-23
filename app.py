@@ -5,10 +5,12 @@ Flask-based local TTS/STT app with Qwen3 local TTS and sherpa-onnx STT.
 
 import os
 
-# Work around OpenMP Error #15 when torch's libiomp5md and ggml's libomp140
-# meet in one process. This is Intel's documented duplicate-runtime workaround
-# and only has practical effect when ggml falls back to its CPU path.
+# --- Environment hardening (must precede all heavy imports) ---
+# OMP Error #15: torch libiomp5md x ggml libomp140 duplicate runtimes.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# GGUF decoder/speaker workers (mp.Process spawn) print emoji; without
+# explicit UTF-8, a GBK console codepage kills them via UnicodeEncodeError.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import argparse
 import sys

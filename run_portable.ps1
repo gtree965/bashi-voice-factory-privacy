@@ -334,6 +334,8 @@ Write-Host ""
 
 # Prevent OpenMP Error #15 if torch and the GGUF CPU path load different OpenMP runtimes.
 $env:KMP_DUPLICATE_LIB_OK = "TRUE"
+# Align the console with app/worker UTF-8 stdio after all pip operations are complete.
+chcp 65001 > $null
 
 ('[STEP] Starting app.py with host={0} port={1}' -f $BindHost, $Port) | Add-Content -Path $LogFile -Encoding utf8
 $pythonCommand = "`"$Python`" app.py --host `"$BindHost`" --port `"$Port`" 2>> `"$LogFile`""
