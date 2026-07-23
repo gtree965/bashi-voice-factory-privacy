@@ -93,6 +93,10 @@ REFERENCE_ONLY_RE = re.compile(
 
 
 class LocalTTSService(LocalTTSServiceBase):
+    def __init__(self):
+        super().__init__()
+        self._onnx_provider_override: str | None = None
+
     def _ensure_loaded(self):
         with self._state_lock:
             if self._state == "ready" and self._engine is not None:
@@ -110,9 +114,10 @@ class LocalTTSService(LocalTTSServiceBase):
                 from qwen3_tts_gguf.inference import TTSEngine  # noqa: WPS433
 
                 _patch_decoder_ready_timeout(GGUF_DECODER_READY_TIMEOUT)
+                provider = self._onnx_provider_override or GGUF_ONNX_PROVIDER
                 self._engine = TTSEngine(
                     model_dir=str(GGUF_MODEL_DIR),
-                    onnx_provider=GGUF_ONNX_PROVIDER,
+                    onnx_provider=provider,
                     llm_use_gpu=GGUF_LLM_USE_GPU,
                     verbose=GGUF_VERBOSE,
                 )
@@ -182,6 +187,7 @@ class LocalTTSService(LocalTTSServiceBase):
         text: str,
         voice_id: str | None,
         instruct: str = "",
+        _retry_empty_on_cpu: bool = True,
     ) -> tuple[np.ndarray, int]:
         text = normalize_chinese_text(text)
         if not text.strip():
@@ -193,6 +199,7 @@ class LocalTTSService(LocalTTSServiceBase):
         stream = engine.create_stream()
         if stream is None:
             raise LocalTTSError("GGUF TTS engine could not create a stream")
+        retry_on_cpu = False
         try:
             result = stream.custom(
                 text=text,
@@ -202,12 +209,34 @@ class LocalTTSService(LocalTTSServiceBase):
                 config=self._build_config(),
             )
             if result is None or result.audio is None or len(result.audio) == 0:
-                raise LocalTTSError("No audio was produced by GGUF TTS")
+                retry_on_cpu = (
+                    _retry_empty_on_cpu
+                    and GGUF_ONNX_PROVIDER.upper() != "CPU"
+                    and self._onnx_provider_override is None
+                )
+                if not retry_on_cpu:
+                    raise LocalTTSError("No audio was produced by GGUF TTS")
 
-            audio = self._normalize_generated_audio(result.audio.astype(np.float32))
-            return audio, SAMPLE_RATE
+            if not retry_on_cpu:
+                audio = self._normalize_generated_audio(result.audio.astype(np.float32))
+                return audio, SAMPLE_RATE
         finally:
             stream.shutdown()
+
+        provider = self._onnx_provider_override or GGUF_ONNX_PROVIDER
+        print(
+            f"[GGUF] Empty audio on {provider} — falling back to CPU decoder "
+            "(one-time retry).",
+            file=sys.stderr,
+        )
+        self.shutdown()
+        self._onnx_provider_override = "CPU"
+        return self._generate_wav_no_lock(
+            text,
+            voice_id,
+            instruct=instruct,
+            _retry_empty_on_cpu=False,
+        )
 
     def _generate_mp3_no_lock(
         self,
