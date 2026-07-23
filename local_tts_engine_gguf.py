@@ -26,6 +26,11 @@ GGUF_ONNX_PROVIDER = os.environ.get("GGUF_ONNX_PROVIDER", "DML")
 GGUF_LLM_USE_GPU = os.environ.get("GGUF_LLM_USE_GPU", "1") != "0"
 GGUF_VERBOSE = os.environ.get("GGUF_VERBOSE", "1") != "0"
 GGUF_DECODER_READY_TIMEOUT = float(os.environ.get("GGUF_DECODER_READY_TIMEOUT", "60"))
+_PROVIDER_FULL_NAMES = {
+    "DML": "DmlExecutionProvider",
+    "CPU": "CPUExecutionProvider",
+    "CUDA": "CUDAExecutionProvider",
+}
 
 OUTPUT_DIR = APP_ROOT / "static" / "audio"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -111,10 +116,29 @@ class LocalTTSService(LocalTTSServiceBase):
                 if str(GGUF_DIR) not in sys.path:
                     sys.path.insert(0, str(GGUF_DIR))
 
+                try:
+                    import onnxruntime as ort  # noqa: WPS433
+
+                    available_providers = ort.get_available_providers()
+                except Exception as exc:
+                    raise LocalTTSError(
+                        "onnxruntime installation is broken; reinstall dependencies. "
+                        "onnxruntime 安装损坏，请重装依赖。"
+                    ) from exc
+
                 from qwen3_tts_gguf.inference import TTSEngine  # noqa: WPS433
 
                 _patch_decoder_ready_timeout(GGUF_DECODER_READY_TIMEOUT)
                 provider = self._onnx_provider_override or GGUF_ONNX_PROVIDER
+                full_provider_name = _PROVIDER_FULL_NAMES.get(provider.upper(), provider)
+                if full_provider_name not in available_providers:
+                    print(
+                        f"[GGUF] ONNX provider {provider} is unavailable "
+                        f"({available_providers}) — falling back to CPU decoder.",
+                        file=sys.stderr,
+                    )
+                    provider = "CPU"
+                    self._onnx_provider_override = "CPU"
                 self._engine = TTSEngine(
                     model_dir=str(GGUF_MODEL_DIR),
                     onnx_provider=provider,
