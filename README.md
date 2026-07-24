@@ -111,7 +111,7 @@ The table below shows **actually measured** numbers from author hardware. The bu
 | AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 s | ~5-10 min | ✓ Tested |
 | Intel N305 laptop + UHD iGPU | GGUF + Vulkan / DirectML | 53 s | 25-46 min | ✓ Tested 2026-05-25 |
 | Intel N100 mini-PC + UHD iGPU | GGUF + Vulkan / DirectML | 126 s | 58 min - 1h49 min | ✓ Tested 2026-05-25 |
-| NVIDIA RTX 5070 (12 GB, cloud PC) | GGUF + Vulkan + DirectML | ~1 s | 41 s - 1 m 17 s | ✓ Tested 2026-06-12 (海马云 HMv Cloud PC, Vulkan path) |
+| NVIDIA RTX 5070 (12 GB, cloud PC, Blackwell) | GGUF + Vulkan/CUDA + DirectML | ~1 s | 41 s - 1 m 17 s | ✓ Tested 2026-06-12 (Vulkan) & 2026-07-24 (海马云 HMv Cloud PC): full cold-start synthesis confirmed; optional CUDA add-on verified working (LLM 28 layers on CUDA0, decoder DirectML fp16). CUDA-vs-Vulkan A/B still welcome. |
 | Other NVIDIA RTX / GTX (desktop) | GGUF + Vulkan + DirectML · optional CUDA add-on | community reports welcome | community reports welcome | awaiting desktop tester reports via GitHub Issues |
 | Apple Silicon / Intel Arc | — | not yet measured | not yet measured | not validated yet |
 
@@ -125,7 +125,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 | Hardware class | Acceleration path used | Status |
 |---|---|---|
-| NVIDIA RTX 30 / 40 / 50 (desktop) | GGUF + Vulkan default · optional CUDA in-app upgrade | ✅ RTX 5070 measured 2026-06-12: ~1 s for 25-char probe on Vulkan path (cloud PC, 海马云). CUDA add-on A/B numbers + other-card reports welcome via Issues. CUDA add-on requires driver ≥ 545.x. |
+| NVIDIA RTX 30 / 40 / 50 (desktop) | GGUF + Vulkan default · optional CUDA in-app upgrade | ✅ RTX 5070 (Blackwell) verified on 海马云 cloud PC — 2026-06-12 Vulkan probe ~1 s; 2026-07-24 full cold-start synthesis + optional CUDA add-on confirmed working (LLM 28 layers on CUDA0, decoder DirectML fp16, driver 610.47). CUDA-vs-Vulkan A/B numbers + other-card reports still welcome via Issues. CUDA add-on requires driver ≥ 545.x. |
 | NVIDIA GTX 10 / 16 (desktop) | GGUF + Vulkan default · optional CUDA in-app upgrade | ✅ Same flow, same driver requirement; reports welcome via Issues. |
 | NVIDIA datacenter (A10 / A100 / T4) | Manual setup required | ⚠️ TCC mode + old cloud driver = manual workaround. See Troubleshooting. |
 | AMD RX 500 / 600 / 7000 / 9000 (discrete) | GGUF + Vulkan + DirectML | ✅ Tested (RX 590, RX 9060 XT) |

@@ -111,7 +111,7 @@
 | AMD RX 590 (8 GB) | GGUF + Vulkan | 3-5 秒 | 约 5-10 分钟 | ✓ 实测 |
 | Intel N305 笔记本 + UHD 集显 | GGUF + Vulkan / DirectML | 53 秒 | 25-46 分钟 | ✓ 2026-05-25 实测 |
 | Intel N100 迷你主机 + UHD 集显 | GGUF + Vulkan / DirectML | 126 秒 | 58 分钟 - 1 小时 49 分 | ✓ 2026-05-25 实测 |
-| NVIDIA RTX 5070（12 GB，云电脑） | GGUF + Vulkan + DirectML | 约 1 秒 | 41 秒 - 1 分 17 秒 | ✓ 2026-06-12 海马云 HMv Cloud PC 实测（Vulkan 路径） |
+| NVIDIA RTX 5070（12 GB，云电脑，Blackwell） | GGUF + Vulkan/CUDA + DirectML | 约 1 秒 | 41 秒 - 1 分 17 秒 | ✓ 2026-06-12（Vulkan）& 2026-07-24（海马云 HMv Cloud PC）实测：全冷启动合成确认；可选 CUDA 附加包已实证可用（LLM 28 层跑 CUDA0、解码 DirectML fp16）。CUDA-vs-Vulkan A/B 仍欢迎反馈。 |
 | 其它 NVIDIA RTX / GTX（桌面） | GGUF + Vulkan + DirectML · 可选 CUDA 附加包 | 待社区报数 | 待社区报数 | 等待桌面 tester 通过 GitHub Issues 报数 |
 | Apple Silicon / Intel Arc | — | 暂未实测 | 暂未实测 | 尚未验证 |
 
@@ -125,7 +125,7 @@
 
 | 硬件类别 | 实际加速路径 | 状态 |
 |---|---|---|
-| NVIDIA RTX 30 / 40 / 50（桌面） | 默认 GGUF + Vulkan · 可选 CUDA 应用内升级 | ✅ RTX 5070 2026-06-12 实测：Vulkan 路径 25 字探测约 1 秒（云电脑 海马云）。CUDA 附加包 A/B 数字 + 其它卡报数欢迎通过 Issues 反馈。CUDA add-on 需驱动 ≥ 545.x。 |
+| NVIDIA RTX 30 / 40 / 50（桌面） | 默认 GGUF + Vulkan · 可选 CUDA 应用内升级 | ✅ RTX 5070（Blackwell）海马云云电脑已验证——2026-06-12 Vulkan 探测约 1 秒；2026-07-24 全冷启动合成 + 可选 CUDA 附加包实证可用（LLM 28 层跑 CUDA0、解码 DirectML fp16、驱动 610.47）。CUDA-vs-Vulkan A/B 数字 + 其它卡报数仍欢迎通过 Issues 反馈。CUDA add-on 需驱动 ≥ 545.x。 |
 | NVIDIA GTX 10 / 16（桌面） | 默认 GGUF + Vulkan · 可选 CUDA 应用内升级 | ✅ 同一流程，同样驱动要求；报数欢迎通过 Issues。 |
 | NVIDIA 数据中心卡（A10 / A100 / T4） | 需要手动配置 | ⚠️ TCC 模式 + 云端老驱动 = 需要手动 workaround。见常见问题排查。 |
 | AMD RX 500 / 600 / 7000 / 9000（独立显卡） | GGUF + Vulkan + DirectML | ✅ 实测（RX 590、RX 9060 XT） |
