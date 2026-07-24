@@ -45,11 +45,13 @@ Flask app (app.py)
         +-- upload media to static/uploads/
         +-- utils.extract_audio_wav() to 16 kHz WAV
         +-- model_manager.py model registry / downloads
+        +-- stt_engine_factory.py engine selection
         +-- sherpa-onnx engine wrappers
         |     +-- engines/sherpa_sensevoice.py
         |     +-- engines/sherpa_parakeet.py
         |
         +-- zh_confusion.py static Chinese correction layer
+        +-- stt_subtitles.py subtitle formatting / normalization
         +-- optional speaker_diarization.py path, UI disabled by default
         +-- background transcription thread
         +-- SSE progress stream
@@ -123,6 +125,8 @@ bashi-privacy-app/
 ├─ backend_probe.py
 ├─ tts_routes.py
 ├─ stt_routes.py
+├─ stt_engine_factory.py
+├─ stt_subtitles.py
 ├─ local_tts_engine.py
 ├─ local_tts_service_base.py
 ├─ local_tts_engine_gguf.py
@@ -241,6 +245,14 @@ bashi-privacy-app/
   - shared `Segment` and `TranscriptionResult` dataclasses
   - shared 16 kHz WAV loading, Silero VAD, decode loop, and segment clamping
   - per-engine VAD threshold, character limit, label, and text-processing hooks
+
+- `stt_engine_factory.py`
+  - registry-driven STT engine selection by model architecture
+  - exact legacy model-name and model-ID fallback for older metadata
+
+- `stt_subtitles.py`
+  - subtitle timestamp, speaker-prefix, merge, and normalization helpers
+  - compatibility exports are retained by `stt_routes.py`
 
 - `engines/sherpa_sensevoice.py`
   - SenseVoice + Silero VAD wrapper
@@ -470,6 +482,8 @@ Keep GGUF-only long-mode behavior inside the GGUF service; do not push it into a
 Start with:
 
 - `stt_routes.py`
+- `stt_engine_factory.py`
+- `stt_subtitles.py`
 - `model_manager.py`
 - `stt_engine.py`
 - `engines/sherpa_sensevoice.py`

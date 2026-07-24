@@ -5,15 +5,24 @@ import json
 import time
 import threading
 import urllib.parse
-import re
 from pathlib import Path
 from flask import Blueprint, request, jsonify, Response, stream_with_context, send_file
 from werkzeug.utils import secure_filename
 
 from model_manager import ModelManager
 from speaker_diarization import SpeakerDiarizer, SpeakerTurn, assign_speakers_to_segments, speaker_label
-from engines.sherpa_sensevoice import SherpaSenseVoiceEngine
-from engines.sherpa_parakeet import SherpaParakeetEngine
+from stt_engine_factory import create_stt_engine
+from stt_subtitles import (
+    _format_segment_text,
+    _format_speaker_prefix,
+    _has_speaker,
+    _is_cjk,
+    _smooth_join,
+    fix_timestamp_overlaps,
+    format_timestamp,
+    merge_short_segments,
+    normalize_subtitle_text,
+)
 from utils import extract_audio_wav
 
 stt_bp = Blueprint("stt", __name__, url_prefix="/api/stt")
@@ -26,17 +35,6 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 METRICS_DIR = Path(".stt_metrics")
 METRICS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = int(os.environ.get("BASHI_STT_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
-_FULL_WIDTH_SPACE = "\u3000"
-_PROTECTED_PATTERNS = re.compile(
-    r"(https?://\S+|www\.\S+|"
-    r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+(?:/[A-Za-z0-9_./%-]*)?|"
-    r"(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?!\d)|"
-    r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|"
-    r"\b\d+\.\d+\b)"
-)
-_MULTI_SPACE_RE = re.compile(r" +")
-_MULTI_FWS_RE = re.compile(rf"{_FULL_WIDTH_SPACE}+")
-_SPACE_AROUND_FWS_RE = re.compile(rf" *{_FULL_WIDTH_SPACE} *")
 
 model_manager = ModelManager(MODELS_DIR)
 
@@ -127,23 +125,7 @@ def acquire_engine(model_id=None):
                 return None
 
             try:
-                model_name_lower = meta.get("name", "").lower()
-                model_id_lower = (model_id or "").lower()
-
-                if "parakeet" in model_id_lower or "parakeet" in model_name_lower:
-                    engine_instance = SherpaParakeetEngine(model_dir)
-                elif (
-                    "sensevoice" in model_id_lower
-                    or "sensevoice" in model_name_lower
-                    or "sense-voice" in model_id_lower
-                    or "sense-voice" in model_name_lower
-                ):
-                    engine_instance = SherpaSenseVoiceEngine(model_dir)
-                else:
-                    raise RuntimeError(
-                        f"Unsupported STT model engine for {model_id}: {meta.get('name', '')}"
-                    )
-
+                engine_instance = create_stt_engine(meta, model_dir)
                 engine_instance.load_model()
                 current_engine_model_id = model_id
             except Exception as e:
@@ -587,229 +569,6 @@ def get_result(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify(payload)
-
-def format_timestamp(seconds: float, separator: str = ",") -> str:
-    """Format seconds into HH:MM:SS,mmm or HH:MM:SS.mmm"""
-    ms = int((seconds % 1) * 1000)
-    m, s = divmod(int(seconds), 60)
-    h, m = divmod(m, 60)
-    return f"{h:02d}:{m:02d}:{s:02d}{separator}{ms:03d}"
-
-
-def _is_cjk(text: str) -> bool:
-    """Check if text is predominantly CJK (Chinese/Japanese/Korean)."""
-    for ch in text:
-        if '\u4e00' <= ch <= '\u9fff' or '\u3040' <= ch <= '\u30ff' or '\uac00' <= ch <= '\ud7af':
-            return True
-    return False
-
-
-def _smooth_join(buf_text: str, seg_text: str) -> str:
-    """Join two subtitle texts, smoothing punctuation at the boundary.
-
-    English: "What keeps us?" + "healthy and happy" -> "What keeps us healthy and happy"
-    Chinese: "军事力量" + "。" -> "军事力量。"  (no space, CJK join)
-    """
-    if not buf_text or not seg_text:
-        return (buf_text or "") + (seg_text or "")
-
-    buf_stripped = buf_text.rstrip()
-    cjk = _is_cjk(buf_stripped) or _is_cjk(seg_text)
-
-    # CJK: join without space, no punctuation smoothing needed
-    # (Chinese punctuation like 。，is usually correct from the model)
-    if cjk:
-        return buf_stripped + seg_text
-
-    # English: smooth false sentence breaks from VAD splits
-    first_alpha = next((c for c in seg_text if c.isalpha()), "")
-
-    if buf_stripped and buf_stripped[-1] in ".!?":
-        starts_lower = first_alpha.islower()
-        ends_question = buf_stripped[-1] == "?"
-
-        if starts_lower or ends_question:
-            # Remove false sentence-ending punctuation, lowercase continuation
-            buf_clean = buf_stripped[:-1].rstrip()
-            seg_clean = seg_text[0].lower() + seg_text[1:] if seg_text[0].isupper() else seg_text
-            return buf_clean + " " + seg_clean
-
-    return buf_text + " " + seg_text
-
-
-def _has_speaker(seg: dict) -> bool:
-    return seg.get("speaker") is not None
-
-
-def _format_speaker_prefix(seg: dict, ui_lang: str = "en") -> str:
-    if not _has_speaker(seg):
-        return ""
-    return f"{speaker_label(int(seg['speaker']), ui_lang)}: "
-
-
-def _format_segment_text(seg: dict, text: str | None = None, ui_lang: str = "en") -> str:
-    body = seg.get("text", "") if text is None else text
-    return _format_speaker_prefix(seg, ui_lang) + body
-
-
-def merge_short_segments(segments: list, max_duration: float = 7.0) -> list:
-    """Merge short subtitle fragments into reader-friendly cards.
-
-    Merges consecutive segments when:
-    - The buffer is short, OR the new segment is tiny
-    - The gap between segments is small (<1.5s)
-    - The combined text fits within a char limit (80 English / 40 CJK)
-    - The combined duration stays under max_duration
-    """
-    if not segments:
-        return segments
-
-    # Detect CJK content from first segment with text
-    first_text = next((s["text"] for s in segments if s.get("text")), "")
-    cjk = _is_cjk(first_text)
-
-    # CJK chars are ~2x wider; use tighter thresholds
-    char_limit = 40 if cjk else 80
-    buf_short_limit = 6 if cjk else 42      # ~6 CJK chars = fragment
-    seg_tiny_limit = 4 if cjk else 20       # ~4 CJK chars = tiny
-
-    merged = [dict(segments[0])]
-
-    for seg in segments[1:]:
-        buf = merged[-1]
-        buf_chars = len(buf["text"])
-        buf_dur = buf["end"] - buf["start"]
-        seg_chars = len(seg["text"])
-        seg_dur = seg["end"] - seg["start"]
-        gap = seg["start"] - buf["end"]
-        combined = _smooth_join(buf["text"], seg["text"])
-        combined_dur = seg["end"] - buf["start"]
-
-        buf_short = buf_chars < buf_short_limit or buf_dur < 1.5
-        seg_tiny = seg_chars < seg_tiny_limit or seg_dur < 0.8
-        fits = len(combined) <= char_limit
-        close = gap < 1.5
-        duration_ok = combined_dur <= max_duration
-        same_speaker = (
-            not _has_speaker(buf)
-            or not _has_speaker(seg)
-            or buf.get("speaker") == seg.get("speaker")
-        )
-
-        if same_speaker and (buf_short or seg_tiny) and fits and close and duration_ok:
-            merged_seg = {
-                "start": buf["start"],
-                "end": seg["end"],
-                "text": combined,
-                "index": buf["index"],
-            }
-            for key in ("language", "speaker", "speaker_label"):
-                if key in buf:
-                    merged_seg[key] = buf[key]
-                elif key in seg:
-                    merged_seg[key] = seg[key]
-            merged[-1] = merged_seg
-        else:
-            merged.append(dict(seg))
-
-    # Re-index
-    for i, seg in enumerate(merged):
-        seg["index"] = i
-
-    return merged
-
-
-def normalize_subtitle_text(text: str) -> str:
-    """Normalize subtitle text for export.
-
-    - CJK-dominant text: remove punctuation; replace mid-sentence punctuation
-      with one full-width space U+3000; remove sentence-final punctuation.
-    - English-dominant text: keep punctuation unchanged.
-    """
-    if not text:
-        return text
-
-    # CJK subtitle style: remove punctuation, but keep a visual pause in the
-    # middle of a sentence using one full-width space.
-    cjk_punctuation_chars = set("，。！？；：、《》【】「」『』〈〉〔〕“”‘’·…—–")
-    punctuation_chars = cjk_punctuation_chars | set(
-        ",.!?;:()[]{}<>"
-        "\"`/\\|_+=*&^%$#@~-"
-    )
-
-    if not _is_cjk(text) and not any(ch in cjk_punctuation_chars for ch in text):
-        return text
-
-    def is_word_internal_apostrophe(s: str, idx: int) -> bool:
-        if s[idx] != "'":
-            return False
-        if idx == 0 or idx == len(s) - 1:
-            return False
-        return s[idx - 1].isascii() and s[idx - 1].isalnum() and s[idx + 1].isascii() and s[idx + 1].isalnum()
-
-    def next_visible_char(s: str, start_idx: int) -> str:
-        for ch in s[start_idx:]:
-            if not ch.isspace():
-                return ch
-        return ""
-
-    protected = {}
-
-    def protect_match(match: re.Match) -> str:
-        key = f"\uFFF0{len(protected)}\uFFF1"
-        protected[key] = match.group(0)
-        return key
-
-    text = _PROTECTED_PATTERNS.sub(protect_match, text)
-
-    out = []
-    for i, ch in enumerate(text):
-        if ch == "'" and is_word_internal_apostrophe(text, i):
-            out.append(ch)
-            continue
-
-        if ch in punctuation_chars:
-            next_ch = next_visible_char(text, i + 1)
-            if next_ch:
-                out.append(_FULL_WIDTH_SPACE)
-            continue
-
-        out.append(ch)
-
-    cleaned = "".join(out)
-    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned)
-    cleaned = _MULTI_FWS_RE.sub(_FULL_WIDTH_SPACE, cleaned)
-    cleaned = _SPACE_AROUND_FWS_RE.sub(_FULL_WIDTH_SPACE, cleaned)
-    cleaned = cleaned.strip(" " + _FULL_WIDTH_SPACE)
-    for key, value in protected.items():
-        cleaned = cleaned.replace(key, value)
-    return cleaned
-
-
-def fix_timestamp_overlaps(segments: list) -> list:
-    """
-    Post-process segments to ensure no timestamp overlaps.
-    If seg[i].end > seg[i+1].start, snap seg[i].end = seg[i+1].start.
-    Also re-index segments sequentially.
-    """
-    if not segments:
-        return segments
-
-    fixed = []
-    for i, seg in enumerate(segments):
-        new_seg = dict(seg)
-        if i + 1 < len(segments):
-            next_start = segments[i + 1]["start"]
-            if new_seg["end"] > next_start:
-                new_seg["end"] = next_start
-        # Ensure end > start (minimum 10ms gap)
-        if new_seg["end"] <= new_seg["start"]:
-            new_seg["end"] = new_seg["start"] + 0.01
-        new_seg["index"] = i
-        fixed.append(new_seg)
-
-    return fixed
-
 
 @stt_bp.route("/export/<job_id>", methods=["GET"])
 def export_result(job_id):

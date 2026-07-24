@@ -19,6 +19,7 @@ MODEL_REGISTRY = {
         "name": "SenseVoice Small (INT8)",
         "name_zh": "SenseVoice 小型 (INT8量化)",
         "engine": "sherpa-onnx",
+        "arch": "sensevoice",
         "size_mb": 242,
         "languages": ["zh", "en", "ja", "ko", "yue"],
         "files": {
@@ -41,6 +42,7 @@ MODEL_REGISTRY = {
         "name": "Parakeet TDT 0.6B (INT8)",
         "name_zh": "Parakeet TDT 0.6B (INT8量化)",
         "engine": "sherpa-onnx",
+        "arch": "parakeet",
         "size_mb": 661,
         "languages": ["en"],
         "files": {
