@@ -8,8 +8,9 @@ import os
 # --- Environment hardening (must precede all heavy imports) ---
 # OMP Error #15: torch libiomp5md x ggml libomp140 duplicate runtimes.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-# GGUF decoder/speaker workers (mp.Process spawn) print emoji; without
-# explicit UTF-8, a GBK console codepage kills them via UnicodeEncodeError.
+# Best-effort UTF-8 for this process's own stdio and non-isolated children such
+# as the probe subprocess. Isolated mp-spawn workers ignore PYTHON* env via -I;
+# local_tts_engine_gguf.py injects command-line -X utf8=1 for those workers.
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import argparse

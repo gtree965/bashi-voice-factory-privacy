@@ -1,4 +1,5 @@
 import gc
+import multiprocessing.spawn as _mp_spawn
 import os
 import queue
 import re
@@ -12,6 +13,35 @@ import numpy as np
 
 from audio_encoding import write_mp3
 from local_tts_service_base import LocalTTSBusyError, LocalTTSError, LocalTTSServiceBase
+
+
+def _install_worker_utf8_spawn_patch() -> None:
+    """Force UTF-8 mode for mp-spawned workers under embeddable Python.
+
+    Embeddable Python starts isolated, so multiprocessing copies ``-I`` to
+    worker command lines. ``-I`` implies ``-E`` and makes those workers ignore
+    PYTHONUTF8/PYTHONIOENCODING even though the variables remain in os.environ.
+    Injecting command-line ``-X utf8=1`` survives ``-I`` and keeps decoder and
+    speaker worker emoji prints from failing on GBK consoles.
+    """
+    orig = _mp_spawn.get_command_line
+    if getattr(orig, "_bashi_utf8", False):
+        return
+
+    def get_command_line(**kwds):
+        cmd = orig(**kwds)
+        try:
+            if cmd and not any(str(arg).startswith("utf8") for arg in cmd):
+                return cmd[:1] + ["-X", "utf8=1"] + cmd[1:]
+        except Exception:
+            pass
+        return cmd
+
+    get_command_line._bashi_utf8 = True
+    _mp_spawn.get_command_line = get_command_line
+
+
+_install_worker_utf8_spawn_patch()
 
 
 APP_ROOT = Path(__file__).resolve().parent
