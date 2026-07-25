@@ -4,6 +4,11 @@ from typing import Generator, List
 
 import numpy as np
 
+from logging_setup import get_logger
+
+
+logger = get_logger(__name__)
+
 try:
     import sherpa_onnx
 except ImportError:
@@ -72,7 +77,7 @@ class SttEngine:
         samples, sample_rate = self._load_wav_16k_mono(audio_path)
         speech_segments = self._run_vad(samples, sample_rate, vad_model_path)
 
-        print(
+        logger.info(
             f"[{self.ENGINE_LABEL}] VAD detected "
             f"{len(speech_segments)} speech segments"
         )

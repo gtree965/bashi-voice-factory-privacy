@@ -12,7 +12,11 @@ from pathlib import Path
 import numpy as np
 
 from audio_encoding import write_mp3
+from logging_setup import get_logger
 from local_tts_service_base import LocalTTSBusyError, LocalTTSError, LocalTTSServiceBase
+
+
+logger = get_logger(__name__)
 
 
 def _install_worker_utf8_spawn_patch() -> None:
@@ -162,10 +166,9 @@ class LocalTTSService(LocalTTSServiceBase):
                 provider = self._onnx_provider_override or GGUF_ONNX_PROVIDER
                 full_provider_name = _PROVIDER_FULL_NAMES.get(provider.upper(), provider)
                 if full_provider_name not in available_providers:
-                    print(
+                    logger.warning(
                         f"[GGUF] ONNX provider {provider} is unavailable "
-                        f"({available_providers}) — falling back to CPU decoder.",
-                        file=sys.stderr,
+                        f"({available_providers}) — falling back to CPU decoder."
                     )
                     provider = "CPU"
                     self._onnx_provider_override = "CPU"
@@ -278,10 +281,9 @@ class LocalTTSService(LocalTTSServiceBase):
             stream.shutdown()
 
         provider = self._onnx_provider_override or GGUF_ONNX_PROVIDER
-        print(
+        logger.warning(
             f"[GGUF] Empty audio on {provider} — falling back to CPU decoder "
-            "(one-time retry).",
-            file=sys.stderr,
+            "(one-time retry)."
         )
         self.shutdown()
         self._onnx_provider_override = "CPU"

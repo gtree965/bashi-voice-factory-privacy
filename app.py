@@ -26,7 +26,11 @@ from backend_probe import (  # noqa: E402
     bootstrap_backend_selection,
     format_selection_log_line,
 )
+from logging_setup import get_logger, setup_logging  # noqa: E402
 from utils import cleanup_old_files  # noqa: E402
+
+
+logger = get_logger(__name__)
 
 
 def create_app() -> Flask:
@@ -61,33 +65,35 @@ def _bootstrap_backend_or_exit() -> None:
     try:
         result = bootstrap_backend_selection()
     except BackendOverrideConflictError as exc:
-        print(f"[Backend Selector] Startup aborted: {exc}", file=sys.stderr)
+        logger.error("[Backend Selector] Startup aborted: %s", exc)
         raise SystemExit(2)
     except BackendProbeError as exc:
         log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launch_log.txt")
         sep = "=" * 60
-        print(sep, file=sys.stderr)
-        print("[Backend Selector] No usable backend was found.", file=sys.stderr)
-        print(f"  Detail: {exc}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Most common causes / 常见原因:", file=sys.stderr)
-        print("  - GGUF runtime model files missing or corrupted —", file=sys.stderr)
-        print("    re-run the launcher to re-download from ModelScope.", file=sys.stderr)
-        print("    GGUF 运行模型文件缺失或损坏 —— 请重新运行启动器从 ModelScope 下载。", file=sys.stderr)
-        print("  - Vulkan / DirectML drivers outdated — update GPU driver.", file=sys.stderr)
-        print("    Vulkan / DirectML 驱动过旧 —— 请更新显卡驱动。", file=sys.stderr)
-        print("  - Insufficient RAM (need >= 8 GB free for 1.7B model).", file=sys.stderr)
-        print("    内存不足（1.7B 模型需要至少 8 GB 可用内存）。", file=sys.stderr)
-        print("", file=sys.stderr)
-        print(f"  Full probe log: {log_path}", file=sys.stderr)
-        print(f"  完整探测日志: {log_path}", file=sys.stderr)
-        print(sep, file=sys.stderr)
+        logger.error(sep)
+        logger.error("[Backend Selector] No usable backend was found.")
+        logger.error("  Detail: %s", exc)
+        logger.error("")
+        logger.error("Most common causes / 常见原因:")
+        logger.error("  - GGUF runtime model files missing or corrupted —")
+        logger.error("    re-run the launcher to re-download from ModelScope.")
+        logger.error("    GGUF 运行模型文件缺失或损坏 —— 请重新运行启动器从 ModelScope 下载。")
+        logger.error("  - Vulkan / DirectML drivers outdated — update GPU driver.")
+        logger.error("    Vulkan / DirectML 驱动过旧 —— 请更新显卡驱动。")
+        logger.error("  - Insufficient RAM (need >= 8 GB free for 1.7B model).")
+        logger.error("    内存不足（1.7B 模型需要至少 8 GB 可用内存）。")
+        logger.error("")
+        logger.error("  Full probe log: %s", log_path)
+        logger.error("  完整探测日志: %s", log_path)
+        logger.error(sep)
         raise SystemExit(3)
 
-    print(format_selection_log_line(result.selection))
+    logger.info(format_selection_log_line(result.selection))
 
 
 if __name__ == "__main__":
+    setup_logging()
+
     parser = argparse.ArgumentParser(
         description="Bashi Voice Factory Privacy Edition (巴适声工厂隐私版)"
     )
@@ -105,25 +111,25 @@ if __name__ == "__main__":
     cleanup_old_files(output_dir, max_age_hours=24)
     cleanup_old_files(upload_dir, max_age_hours=24)
 
-    print("=" * 50)
-    print(f"Bashi Voice Factory Privacy Edition v{version}")
-    print("Local TTS: Qwen3-TTS-12Hz-1.7B-CustomVoice")
-    print("本地隐私版：Qwen3 本地语音 + sherpa 离线转写")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("Bashi Voice Factory Privacy Edition v%s", version)
+    logger.info("Local TTS: Qwen3-TTS-12Hz-1.7B-CustomVoice")
+    logger.info("本地隐私版：Qwen3 本地语音 + sherpa 离线转写")
+    logger.info("=" * 50)
 
     if args.host == "0.0.0.0":
-        print(f"Starting server at http://0.0.0.0:{args.port} (Network Accessible)")
+        logger.info("Starting server at http://0.0.0.0:%s (Network Accessible)", args.port)
     else:
-        print(f"Starting server at http://{args.host}:{args.port} (Local Only)")
+        logger.info("Starting server at http://%s:%s (Local Only)", args.host, args.port)
 
-    print("Press Ctrl+C to stop")
-    print("=" * 50)
+    logger.info("Press Ctrl+C to stop")
+    logger.info("=" * 50)
 
     if os.environ.get("LOCAL_TTS_WARMUP_ON_START") == "1":
-        print("Warming up local TTS engine...")
+        logger.info("Warming up local TTS engine...")
         from local_tts_engine import service
 
         service.warmup()
-        print("Warmup complete.")
+        logger.info("Warmup complete.")
 
     app.run(debug=False, host=args.host, port=args.port)

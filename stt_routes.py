@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Blueprint, request, jsonify, Response, stream_with_context, send_file
 from werkzeug.utils import secure_filename
 
+from logging_setup import get_logger
 from model_manager import ModelManager
 from speaker_diarization import SpeakerDiarizer, SpeakerTurn, assign_speakers_to_segments, speaker_label
 from stt_engine_factory import create_stt_engine
@@ -25,6 +26,7 @@ from stt_subtitles import (
 )
 from utils import extract_audio_wav
 
+logger = get_logger(__name__)
 stt_bp = Blueprint("stt", __name__, url_prefix="/api/stt")
 
 # Ensure directories exist
@@ -59,7 +61,7 @@ def cleanup_expired_jobs():
         for jid in expired:
             del stt_jobs[jid]
     if expired:
-        print(f"[STT] Cleaned up {len(expired)} expired job(s)")
+        logger.info("[STT] Cleaned up %s expired job(s)", len(expired))
 
 def _cleanup_timer():
     """Run cleanup every hour in a background thread."""
@@ -91,7 +93,11 @@ def acquire_engine(model_id=None):
 
         if engine_instance is not None and current_engine_model_id != model_id:
             # Swap models: unload current to free up RAM
-            print(f"[STT] Swapping active model from {current_engine_model_id} to {model_id}")
+            logger.info(
+                "[STT] Swapping active model from %s to %s",
+                current_engine_model_id,
+                model_id,
+            )
             try:
                 engine_instance.cleanup()
             except Exception:
@@ -131,7 +137,7 @@ def acquire_engine(model_id=None):
             except Exception as e:
                 engine_instance = None
                 current_engine_model_id = None
-                print(f"Failed to load engine for {model_id}: {e}")
+                logger.exception("Failed to load engine for %s: %s", model_id, e)
                 return None
 
         _engine_ref_count += 1
@@ -220,15 +226,6 @@ def _parse_speaker_preset(value) -> str | None:
     return preset
 
 
-def _append_launch_log(message: str) -> None:
-    try:
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        with open("launch_log.txt", "a", encoding="utf-8") as log_file:
-            log_file.write(f"[{timestamp}] {message}\n")
-    except Exception:
-        pass
-
-
 def _dict_or_empty(value) -> dict:
     return value if isinstance(value, dict) else {}
 
@@ -268,7 +265,7 @@ def _write_job_metrics(job_id: str) -> None:
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(dest)
     except Exception as e:
-        _append_launch_log(f"[STT metrics] job={job_id} failed to write metrics: {e}")
+        logger.warning("[STT metrics] job=%s failed to write metrics: %s", job_id, e)
 
 
 def _process_transcription(
@@ -364,7 +361,7 @@ def _process_transcription(
                     stt_jobs[job_id]["speaker_turns"] = speaker_turns
                     stt_jobs[job_id]["segments"] = assigned_segments
                     stt_jobs[job_id]["speaker_progress"] = 100.0
-                _append_launch_log(
+                logger.info(
                     "[STT Speaker ID] "
                     f"job={job_id} preset={diarizer.last_metrics.get('preset')} "
                     f"threads={diarizer.last_metrics.get('num_threads')} "
@@ -388,7 +385,7 @@ def _process_transcription(
                     stt_jobs[job_id]["speaker_progress"] = None
                     if speaker_metrics is not None:
                         stt_jobs[job_id]["speaker_metrics"] = speaker_metrics
-                _append_launch_log(f"[STT Speaker ID] job={job_id} failed: {e}")
+                logger.exception("[STT Speaker ID] job=%s failed: %s", job_id, e)
 
         # Step 5: Done
         total_job_seconds = round(time.monotonic() - job_started_at, 3)
@@ -399,7 +396,7 @@ def _process_transcription(
             segment_count = len(job["segments"])
             timing = dict(job["timing"])
         _write_job_metrics(job_id)
-        _append_launch_log(
+        logger.info(
             "[STT] "
             f"job={job_id} status=done segments={segment_count} "
             f"extract={timing.get('audio_extract_seconds')}s "

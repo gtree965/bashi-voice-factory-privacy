@@ -3,6 +3,11 @@ import time
 import imageio_ffmpeg
 from pathlib import Path
 
+from logging_setup import get_logger
+
+
+logger = get_logger(__name__)
+
 def extract_audio_wav(input_path: Path, output_path: Path) -> Path:
     """Extract audio from any media file to 16kHz mono WAV.
 
@@ -56,4 +61,4 @@ def cleanup_old_files(output_dir: Path, max_age_hours: int = 24):
                 # File may be locked or in use, skip it
                 pass
     if cleaned > 0:
-        print(f"Cleaned up {cleaned} old audio file(s)")
+        logger.info("Cleaned up %s old audio file(s)", cleaned)

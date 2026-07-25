@@ -229,6 +229,7 @@ function Stage-Package {
         "local_tts_engine_pytorch.py",
         "local_tts_service_base.py",
         "local_voice_catalog.py",
+        "logging_setup.py",
         "model_manager.py",
         "PRIVACY.md",
         "README.md",

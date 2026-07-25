@@ -12,6 +12,17 @@ Bashi TTS Core Engine (Offline)
 import os
 import multiprocessing
 
+try:
+    from logging_setup import get_logger
+except ImportError:  # kernel used standalone / outside the app tree
+    import logging
+
+    def get_logger(name):
+        return logging.getLogger(name)
+
+
+logger = get_logger(__name__)
+
 # ---------------------------------------------------------
 # [引擎最底层环境初始化]
 # 务必在 import torch 之前锁定线程，防止多核资源抢占与缓存失效
@@ -34,24 +45,30 @@ def auto_detect_device():
     DirectML 可通过 pip install torch-directml 启用，支持 AMD/Intel 老显卡。
     """
     if torch.cuda.is_available():
-        print("[Auto-Device] Detected NVIDIA CUDA GPU.")
+        logger.info("[Auto-Device] Detected NVIDIA CUDA GPU.")
         return "cuda"
     if hasattr(torch, "xpu") and torch.xpu.is_available():
-        print("[Auto-Device] Detected Intel NPU/XPU.")
+        logger.info("[Auto-Device] Detected Intel NPU/XPU.")
         return "xpu"
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        print("[Auto-Device] Detected Apple Silicon MPS.")
+        logger.info("[Auto-Device] Detected Apple Silicon MPS.")
         return "mps"
     # DirectML: 支持任何 DirectX 12 GPU (AMD Polaris/RDNA, Intel Arc 等)
     # 需要 pip install torch-directml，且 PyTorch 版本 ≤ 2.3.1
     try:
         import torch_directml
         dml_device = torch_directml.device()
-        print(f"[Auto-Device] Detected DirectML device: {dml_device} (AMD/Intel GPU via DX12).")
+        logger.info(
+            "[Auto-Device] Detected DirectML device: %s (AMD/Intel GPU via DX12).",
+            dml_device,
+        )
         return dml_device  # 返回 torch.device 对象
     except (ImportError, Exception):
         pass
-    print(f"[Auto-Device] Fallback to CPU mode (Locked to {optimal_threads} Physical Threads).")
+    logger.info(
+        "[Auto-Device] Fallback to CPU mode (Locked to %s Physical Threads).",
+        optimal_threads,
+    )
     return "cpu"
 
 GLOBAL_DEVICE = auto_detect_device()
@@ -68,7 +85,9 @@ from pathlib import Path
 try:
     from qwen_tts import Qwen3TTSModel
 except ImportError:
-    print("WARNING: Could not import qwen_tts. Make sure you are in the correct conda environment.")
+    logger.warning(
+        "Could not import qwen_tts. Make sure you are in the correct conda environment."
+    )
 
 try:
     from .zh_normalizer_lite import normalize_chinese_text
@@ -76,7 +95,7 @@ except ImportError:
     try:
         from zh_normalizer_lite import normalize_chinese_text
     except ImportError:
-        print("WARNING: Could not import zh_normalizer_lite. Ensure the package is complete.")
+        logger.warning("Could not import zh_normalizer_lite. Ensure the package is complete.")
         def normalize_chinese_text(text, options=None): return text
 
 class BashiTTSEngine:
@@ -102,7 +121,12 @@ class BashiTTSEngine:
             os.environ["TRANSFORMERS_OFFLINE"] = "1"
         
         device_label = str(self.device).upper() if isinstance(self.device, str) else str(self.device)
-        print(f"Loading Qwen3-TTS | Device: {device_label} | Dtype: {self.dtype} | Path: {self.resolved_model_dir}")
+        logger.info(
+            "Loading Qwen3-TTS | Device: %s | Dtype: %s | Path: %s",
+            device_label,
+            self.dtype,
+            self.resolved_model_dir,
+        )
         t0 = time.time()
         self.model = Qwen3TTSModel.from_pretrained(
             self.resolved_model_dir, 
@@ -110,7 +134,7 @@ class BashiTTSEngine:
             dtype=self.dtype,
             attn_implementation="sdpa" # [Option 3] 启用 PyTorch 内存优化版点积注意力机制
         )
-        print(f"Model loaded successfully in {time.time()-t0:.2f}s")
+        logger.info("Model loaded successfully in %.2fs", time.time() - t0)
         
         # 情绪锚点字典
         self.anchor_phrases = {
