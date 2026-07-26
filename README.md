@@ -153,11 +153,11 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 | pip install stops mid-way after WiFi blip | Retry triggers automatically (3 attempts, 5s/30s/120s backoff). If all 3 fail, fix network and re-run the launcher — pip caches what's already installed |
 | pip install fails with a "long path support" message | Run the registry one-liner from the launcher's advisory in an Administrator PowerShell, then re-launch |
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
-| App exits with "No usable backend was found" | Check `launch_log.txt` — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
+| App exits with "No usable backend was found" | Check `app.log` (structured, timestamped application logs) and `launch_log.txt` (launcher steps and raw stderr) — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
 | STT download says "镜像失败" | Should not happen in v0.1.0 final — old behavior from removed ModelScope path |
 | Cloud / datacenter NVIDIA GPU (A10 / A100 / T4 on Chinese cloud Windows images): `access violation reading 0x0000000000000000` or `GGUF probe failed` | Datacenter NVIDIA GPUs typically run in **TCC mode** (Vulkan/DirectML disabled) with older drivers (~538.x) incompatible with the CUDA 12.4 add-on. **Desktop RTX/GTX cards are NOT affected** (they run WDDM mode by default with modern drivers). In v0.1.2, native startup-probe crashes are isolated and reported instead of terminating the launcher, but TCC setup still requires the manual workaround: (1) rename `vulkan_backend_spike\Qwen3-TTS-GGUF\qwen3_tts_gguf\inference\bin\ggml-vulkan.dll` to `.disabled`; (2) edit `bashi-privacy-app\run_portable.ps1` and add `$env:USE_GGUF_BACKEND = "1"` + `$env:GGUF_ONNX_PROVIDER = "CPU"` after the `Remove-Item Env:USE_GGUF_BACKEND` lines (~line 270); (3) pre-install the CUDA add-on via CLI `python download_cuda_runtime.py`. CUDA 12.4 requires NVIDIA driver ≥ 545.x. Automatic TCC handling remains planned for a later patch. |
 
-Full log path: `bashi-privacy-app\launch_log.txt`
+Full log paths: `bashi-privacy-app\app.log` and `bashi-privacy-app\launch_log.txt`
 
 ---
 

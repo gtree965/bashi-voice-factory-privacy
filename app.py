@@ -68,7 +68,9 @@ def _bootstrap_backend_or_exit() -> None:
         logger.error("[Backend Selector] Startup aborted: %s", exc)
         raise SystemExit(2)
     except BackendProbeError as exc:
-        log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launch_log.txt")
+        app_root = os.path.dirname(os.path.abspath(__file__))
+        app_log_path = os.path.join(app_root, "app.log")
+        launcher_log_path = os.path.join(app_root, "launch_log.txt")
         sep = "=" * 60
         logger.error(sep)
         logger.error("[Backend Selector] No usable backend was found.")
@@ -83,8 +85,16 @@ def _bootstrap_backend_or_exit() -> None:
         logger.error("  - Insufficient RAM (need >= 8 GB free for 1.7B model).")
         logger.error("    内存不足（1.7B 模型需要至少 8 GB 可用内存）。")
         logger.error("")
-        logger.error("  Full probe log: %s", log_path)
-        logger.error("  完整探测日志: %s", log_path)
+        logger.error(
+            "  Full logs: %s (application), %s (launcher)",
+            app_log_path,
+            launcher_log_path,
+        )
+        logger.error(
+            "  完整日志: %s（应用）, %s（启动器）",
+            app_log_path,
+            launcher_log_path,
+        )
         logger.error(sep)
         raise SystemExit(3)
 

@@ -373,7 +373,7 @@ $exitCode = $LASTEXITCODE
 Write-Host ""
 Write-Host "App exited. (Exit code: $exitCode)"
 Write-Host "程序已退出。（退出代码: $exitCode）"
-Write-Host "If the app crashed, check launch_log.txt for details."
-Write-Host "如果程序异常退出，请查看 launch_log.txt 了解详情。"
+Write-Host "If the app crashed, check app.log and launch_log.txt for details."
+Write-Host "如果程序异常退出，请查看 app.log 和 launch_log.txt 了解详情。"
 Read-Host "Press Enter to exit / 按回车退出"
 exit $exitCode

@@ -153,11 +153,11 @@
 | pip 安装途中 WiFi 闪断后中止 | 自动重试 3 次（5/30/120 秒退避）。3 次都失败时，修好网络后重新运行启动器即可（pip 会跳过已装好的包） |
 | pip 安装失败并提示 "long path support" | 按启动器提示，在管理员 PowerShell 中运行一次注册表命令，然后重新启动 |
 | GGUF 下载中断 | 同样自动重试，且支持 HTTP Range 续传，重新运行启动器从 `.part` 文件续传 |
-| 启动报 "No usable backend was found" | 查 `launch_log.txt`。常见原因：GGUF 运行 DLL 缺失、显卡驱动过旧、可用内存 <8 GB。程序会打印中英双语提示告知具体原因 |
+| 启动报 "No usable backend was found" | 查 `app.log`（带时间戳的结构化应用日志）和 `launch_log.txt`（启动器步骤与原生 stderr）。常见原因：GGUF 运行 DLL 缺失、显卡驱动过旧、可用内存 <8 GB。程序会打印中英双语提示告知具体原因 |
 | STT 下载闪过 "镜像失败" | v0.1.0 正式版不会出现 — 是旧版残留的 ModelScope 路径，已删除 |
 | 云端 / 数据中心 NVIDIA 显卡（A10 / A100 / T4，国内云 Windows 镜像）：`access violation reading 0x0000000000000000` 或 `GGUF probe failed` | 数据中心 NVIDIA 显卡通常运行在 **TCC 模式**（Vulkan/DirectML 被屏蔽），且驱动版本较旧（~538.x）跟 CUDA 12.4 add-on 不兼容。**桌面 RTX/GTX 显卡不受影响**（默认 WDDM 模式 + 现代驱动）。v0.1.2 会隔离并报告原生启动探测崩溃，不再让启动器直接退出，但 TCC 配置仍需手动 workaround：(1) 把 `vulkan_backend_spike\Qwen3-TTS-GGUF\qwen3_tts_gguf\inference\bin\ggml-vulkan.dll` 重命名为 `.disabled`；(2) 编辑 `bashi-privacy-app\run_portable.ps1`，在 `Remove-Item Env:USE_GGUF_BACKEND` 行（约第 270 行）之后加上 `$env:USE_GGUF_BACKEND = "1"` + `$env:GGUF_ONNX_PROVIDER = "CPU"`；(3) 命令行预装 CUDA add-on：`python download_cuda_runtime.py`。CUDA 12.4 需要 NVIDIA 驱动 ≥ 545.x。TCC 自动处理仍计划在后续补丁实现。 |
 
-完整日志路径：`bashi-privacy-app\launch_log.txt`
+完整日志路径：`bashi-privacy-app\app.log` 和 `bashi-privacy-app\launch_log.txt`
 
 ---
 

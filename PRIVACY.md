@@ -25,7 +25,7 @@ The only runtime network action is the user-initiated "Check for updates" button
 - 输入文本只发送到本机 Flask 服务。
 - 生成的音频默认保存在本机 `static/audio/`。
 - 上传用于转写的音频/视频只在本机处理。
-- 启动日志默认写入本机 `launch_log.txt`。
+- 结构化应用日志写入本机 `app.log`，启动器步骤与原生 stderr 写入本机 `launch_log.txt`。
 - 后端测速结果保存在浏览器 `localStorage` 中，用于估算后续等待时间。
 
 ## 不收集的内容 / What Is Not Collected
