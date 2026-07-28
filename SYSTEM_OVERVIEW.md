@@ -322,6 +322,10 @@ bashi-privacy-app/
 - `run-gguf.*` and `run-pytorch.*`
   - backend-pinned launchers for debugging and comparison
 
+### Vendored patches
+
+`qwen3_tts_gguf/inference/llama.py` has a local correction for the llama.cpp log callback's ggml level mapping (the upstream code treated the ascending enum as descending and swapped INFO/ERROR). The patch is stored in `vendor_patches/`; reapply it after every upstream refresh.
+
 ## Runtime Directories
 
 - `static/audio/`

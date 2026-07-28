@@ -1,0 +1,67 @@
+diff --git a/qwen3_tts_gguf/inference/llama.py b/qwen3_tts_gguf/inference/llama.py
+--- a/qwen3_tts_gguf/inference/llama.py
++++ b/qwen3_tts_gguf/inference/llama.py
+@@ -2,6 +2,7 @@ import sys
+ import os
+ import ctypes
+ import codecs
++import logging
+ import struct
+ import time
+ from collections import deque, Counter
+@@ -154,30 +155,35 @@ llama_sampler_init_min_p = None
+ llama_sampler_init_penalties = None
+ llama_sampler_accept = None
+ 
++# ggml/llama.cpp log levels (ggml.h):
++#   0 NONE, 1 DEBUG, 2 INFO, 3 WARN, 4 ERROR,
++#   5 CONT = continuation of the previous message, reuse that message's level.
++_GGML_LEVEL_TO_LOGGING = {
++    1: logging.DEBUG,
++    2: logging.INFO,
++    3: logging.WARNING,
++    4: logging.ERROR,
++}
++_last_log_level = logging.INFO
++
++
+ def logger_callback(level, message, user_data):
+-    """
+-    llama.cpp 日志回调函数
+-    level: 
+-        2 = ERROR
+-        3 = WARN
+-        4 = INFO
+-        5 = DEBUG
+-    """
+-    if not message: return
++    """llama.cpp 日志回调。等级按 ggml.h 的升序枚举映射。"""
++    global _last_log_level
++    if not message:
++        return
+     try:
+         msg_str = message.decode('utf-8', errors='replace').strip()
+-        if not msg_str or msg_str in ['.', '\n']: return
+-        
+-        if level == 2:
+-            logger.error(f"[llama.cpp] {msg_str}")
+-        elif level == 3:
+-            logger.warning(f"[llama.cpp] {msg_str}")
+-        elif level == 4:
+-            logger.info(f"[llama.cpp] {msg_str}")
+-        elif level >= 5:
+-            logger.debug(f"[llama.cpp] {msg_str}")
++        if not msg_str or msg_str in ['.', '\n']:
++            return
++
++        if level == 5:                                  # CONT
++            log_level = _last_log_level
+         else:
+-            logger.info(f"[llama.cpp] {msg_str}")
++            log_level = _GGML_LEVEL_TO_LOGGING.get(level, logging.INFO)
++            _last_log_level = log_level
++
++        logger.log(log_level, f"[llama.cpp] {msg_str}")
+     except Exception as e:
+         print(f"日志回调出错: {e}")
+ 
