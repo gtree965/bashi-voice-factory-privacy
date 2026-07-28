@@ -174,6 +174,9 @@ Invoke-Logged -Step "pip check" -LogPath (Join-Path $WorkDir "03-pip-check.log")
     }
 }
 
+# Protect the import smoke and synthesis smoke from mixed OpenMP runtimes.
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
+
 Invoke-Logged -Step "import smoke" -LogPath (Join-Path $WorkDir "04-import-smoke.log") -Command {
     & $python -c "import flask, gguf, onnx, onnxruntime, sentencepiece, sounddevice, torch, transformers, qwen_tts; print('imports ok')"
 }

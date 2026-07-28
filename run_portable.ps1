@@ -33,23 +33,56 @@ function Invoke-NativeCommand {
     }
 }
 
-function Invoke-NativeCommandWithUtf8Log {
+function ConvertTo-NativeOutputLine {
     param(
-        [Parameter(Mandatory = $true)][scriptblock]$Command
+        [AllowNull()][object]$InputObject
+    )
+    if ($InputObject -is [System.Management.Automation.ErrorRecord]) {
+        return $InputObject.Exception.Message
+    }
+    if ($null -eq $InputObject) {
+        return ""
+    }
+    return $InputObject.ToString()
+}
+
+function Invoke-NativeCommandCapture {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Command,
+        [switch]$WriteToHost,
+        [switch]$WriteToLog
     )
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    $lines = [System.Collections.Generic.List[string]]::new()
     try {
         & $Command 2>&1 | ForEach-Object {
-            $line = $_.ToString()
-            Write-Host $line
-            Add-Content -Path $LogFile -Encoding utf8 -Value $line
+            $line = ConvertTo-NativeOutputLine -InputObject $_
+            [void]$lines.Add($line)
+            if ($WriteToHost) {
+                Write-Host $line
+            }
+            if ($WriteToLog) {
+                Add-Content -Path $LogFile -Encoding utf8 -Value $line
+            }
         }
-        return $LASTEXITCODE
+        $exitCode = $LASTEXITCODE
+        return [pscustomobject]@{
+            ExitCode = $exitCode
+            Lines = @($lines)
+        }
     }
     finally {
         $ErrorActionPreference = $oldPreference
     }
+}
+
+function Invoke-NativeCommandWithUtf8Log {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Command
+    )
+    $result = Invoke-NativeCommandCapture -Command $Command -WriteToHost -WriteToLog
+    return $result.ExitCode
 }
 
 function Read-LanBindHost {
@@ -190,6 +223,12 @@ Write-Host "可按 Ctrl+C 取消；重新启动会尽量复用已完成的文件
 Write-Host ""
 
 Configure-EmbeddedPython
+
+# Prevent OpenMP Error #15 if torch and the GGUF CPU path load different OpenMP
+# runtimes. Set before the dependency gate: that gate imports onnxruntime and then
+# qwen_tts (which pulls in torch), i.e. the same double-OpenMP sequence as the app.
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
+
 Assert-WindowsLongPathSupport
 
 $pipArgs = @()
@@ -203,9 +242,22 @@ if ($timeZone -like "*China*" -or $culture -like "zh-*") {
 
 Ensure-Pip
 
-$dependencyCheckCode = 'import importlib.metadata as m; [m.version(p) for p in ("Flask","imageio-ffmpeg","sherpa-onnx","gguf","onnx","onnxruntime-directml","sentencepiece","sounddevice","torch","transformers","qwen-tts")]; import onnxruntime as ort, qwen_tts; ps=ort.get_available_providers(); assert "DmlExecutionProvider" in ps, f"Missing DML: {ps}"'
-$dependencyCheckExit = Invoke-NativeCommand { & $Python -c $dependencyCheckCode *> $null }
-if ($dependencyCheckExit -ne 0) {
+# NOTE: the Python string literals below MUST use single quotes. Windows PowerShell
+# 5.1 -- which run_portable.bat launches -- strips double quotes out of native
+# command arguments, so "Flask" reaches Python as a bare name and raises NameError.
+# Keep this string free of $ and backticks: it is a double-quoted PowerShell literal.
+$dependencyCheckCode = "import importlib.metadata as m; [m.version(p) for p in ('Flask','imageio-ffmpeg','sherpa-onnx','gguf','onnx','onnxruntime-directml','sentencepiece','sounddevice','torch','transformers','qwen-tts')]; import onnxruntime as ort, qwen_tts; ps=ort.get_available_providers(); assert 'DmlExecutionProvider' in ps, f'Missing DML: {ps}'"
+$dependencyCheck = Invoke-NativeCommandCapture { & $Python -c $dependencyCheckCode }
+if ($dependencyCheck.ExitCode -eq 0) {
+    '[STEP] dependency check ok' | Add-Content -Path $LogFile -Encoding utf8
+}
+else {
+    ('[STEP] dependency check failed (exit {0})' -f $dependencyCheck.ExitCode) | Add-Content -Path $LogFile -Encoding utf8
+    if ($dependencyCheck.Lines.Count -gt 0) {
+        $dependencyCheck.Lines | Add-Content -Path $LogFile -Encoding utf8
+    }
+    Write-Host '[WARN] Dependency check failed; details were saved to launch_log.txt.'
+    Write-Host '[WARN] 依赖检查失败；完整原因已写入 launch_log.txt。'
     Write-Host ""
     Write-Host '[INFO] Installing or repairing dependencies. This usually takes 8-10 minutes on a good connection, longer on entry-level CPUs.'
     Write-Host '[INFO] 正在安装或修复依赖。网络顺畅时通常需要 8-10 分钟；入门级 CPU 可能需要 15 分钟以上。'
@@ -217,45 +269,78 @@ if ($dependencyCheckExit -ne 0) {
     $pipMaxAttempts = 3
     $pipBackoffSeconds = @(5, 30, 120)
     $pipInstallExit = -1
+    $firstFailedStepIndex = 0
+    $pipOutputLines = [System.Collections.Generic.List[string]]::new()
+    # Keep Python string literals single-quoted here for the same Windows PowerShell
+    # 5.1 native-argument rule. Do not add $ or backticks to this double-quoted literal.
+    $directMlProbeCode = "import onnxruntime as ort; assert 'DmlExecutionProvider' in ort.get_available_providers()"
+    $pipSteps = @(
+        [pscustomobject]@{
+            LogStep = 'install Python build tooling'
+            Command = { & $Python -m pip install setuptools==79.0.1 wheel==0.45.1 --prefer-binary --no-warn-script-location --progress-bar on @pipArgs }
+        },
+        [pscustomobject]@{
+            LogStep = $null
+            Command = { & $Python -m pip install -r requirements.txt --no-build-isolation --prefer-binary --no-warn-script-location --progress-bar on @pipArgs }
+        },
+        [pscustomobject]@{
+            LogStep = 'pip install qwen-tts --no-deps'
+            Command = { & $Python -m pip install qwen-tts==0.1.1 --no-deps --prefer-binary --no-warn-script-location --progress-bar on @pipArgs }
+        },
+        [pscustomobject]@{
+            LogStep = 'force-reinstall onnxruntime-directml'
+            Command = { & $Python -m pip install --force-reinstall --no-deps onnxruntime-directml==1.23.0 --prefer-binary --no-warn-script-location --progress-bar on @pipArgs }
+        }
+    )
     for ($attempt = 1; $attempt -le $pipMaxAttempts; $attempt++) {
         if ($attempt -gt 1) {
             $wait = $pipBackoffSeconds[$attempt - 2]
+            $pipArgs = @()
             Write-Host ""
-            Write-Host ('[INFO] Network looked unstable. Retrying pip install in {0}s (attempt {1}/{2})...' -f $wait, $attempt, $pipMaxAttempts)
-            Write-Host ('[INFO] 网络似乎不稳。{0} 秒后重试 pip 安装（第 {1}/{2} 次）...' -f $wait, $attempt, $pipMaxAttempts)
+            Write-Host ('[INFO] Mirror did not serve the package. Retrying against upstream PyPI in {0}s (attempt {1}/{2})...' -f $wait, $attempt, $pipMaxAttempts)
+            Write-Host ('[INFO] 镜像未返回该软件包。{0} 秒后改用官方源重试（第 {1}/{2} 次）...' -f $wait, $attempt, $pipMaxAttempts)
             Start-Sleep -Seconds $wait
         }
-        $extraArgs = @()
-        if ($attempt -ge 2) { $extraArgs = @("--no-cache-dir") }
-        '[STEP] install Python build tooling' | Add-Content -Path $LogFile -Encoding utf8
-        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
-            & $Python -m pip install setuptools==79.0.1 wheel==0.45.1 --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
+        for ($stepIndex = $firstFailedStepIndex; $stepIndex -lt $pipSteps.Count; $stepIndex++) {
+            $step = $pipSteps[$stepIndex]
+            if ($stepIndex -eq 3) {
+                $directMlProbe = Invoke-NativeCommandCapture { & $Python -c $directMlProbeCode }
+                if ($directMlProbe.ExitCode -eq 0) {
+                    '[STEP] DirectML already authoritative, skipping force-reinstall' | Add-Content -Path $LogFile -Encoding utf8
+                    $pipInstallExit = 0
+                    $firstFailedStepIndex = $pipSteps.Count
+                    break
+                }
+            }
+            if ($step.LogStep) {
+                ('[STEP] ' + $step.LogStep) | Add-Content -Path $LogFile -Encoding utf8
+            }
+            $pipResult = Invoke-NativeCommandCapture -Command $step.Command -WriteToHost -WriteToLog
+            foreach ($line in $pipResult.Lines) {
+                [void]$pipOutputLines.Add($line)
+            }
+            $pipInstallExit = $pipResult.ExitCode
+            if ($pipInstallExit -ne 0) {
+                $firstFailedStepIndex = $stepIndex
+                break
+            }
+            $firstFailedStepIndex = $stepIndex + 1
         }
-        if ($pipInstallExit -ne 0) { continue }
-
-        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
-            & $Python -m pip install -r requirements.txt --no-build-isolation --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
-        }
-        if ($pipInstallExit -ne 0) { continue }
-
-        '[STEP] pip install qwen-tts --no-deps' | Add-Content -Path $LogFile -Encoding utf8
-        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
-            & $Python -m pip install qwen-tts==0.1.1 --no-deps --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
-        }
-        if ($pipInstallExit -ne 0) { continue }
-
-        '[STEP] force-reinstall onnxruntime-directml' | Add-Content -Path $LogFile -Encoding utf8
-        $pipInstallExit = Invoke-NativeCommandWithUtf8Log {
-            & $Python -m pip install --force-reinstall --no-deps onnxruntime-directml==1.23.0 --prefer-binary --no-warn-script-location --progress-bar on @pipArgs @extraArgs
-        }
-        if ($pipInstallExit -eq 0) { break }
+        if ($pipInstallExit -eq 0 -and $firstFailedStepIndex -ge $pipSteps.Count) { break }
     }
 
     if ($pipInstallExit -ne 0) {
         Write-Host ""
-        Write-Host '[ERROR] pip install failed after retries. Please check your network and re-run the launcher.'
-        Write-Host '[ERROR] pip 安装多次失败。请检查网络连接后重新运行启动器。'
-        Write-Host ("Log: " + $LogFile)
+        $pipFailureText = $pipOutputLines -join [Environment]::NewLine
+        if ($pipFailureText -match '(?i)No matching distribution found|from versions:\s*none') {
+            Write-Host '[ERROR] The dependency index did not have this package (upstream PyPI was tried too). Please retry later.'
+            Write-Host '[ERROR] 依赖源暂时没有该软件包（已尝试官方源）。请稍后重新运行启动器。'
+        }
+        else {
+            Write-Host '[ERROR] pip install failed after retries. Please check your network and re-run the launcher.'
+            Write-Host '[ERROR] pip 安装多次失败。请检查网络连接后重新运行启动器。'
+        }
+        Write-Host ('Logs: app.log: {0}; launch_log.txt: {1}' -f (Join-Path $AppRoot 'app.log'), $LogFile)
         Read-Host "Press Enter to exit / 按回车退出"
         exit 1
     }
@@ -359,8 +444,6 @@ Write-Host "Press Ctrl+C to stop the server."
 Write-Host "按 Ctrl+C 可停止服务器。"
 Write-Host ""
 
-# Prevent OpenMP Error #15 if torch and the GGUF CPU path load different OpenMP runtimes.
-$env:KMP_DUPLICATE_LIB_OK = "TRUE"
 # Align the console with app/worker UTF-8 stdio after all pip operations are complete.
 chcp 65001 > $null
 
