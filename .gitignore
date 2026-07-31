@@ -56,8 +56,11 @@ desktop.ini
 roadmap_review_report_by_*.md
 *.srt
 
-# Local test experiment output (not regression fixtures).
-tests/.tmp/
+# Only the automated regression suite is tracked. The GGUF baseline fixtures
+# and the manual probe harness stay local-only: they are large, machine
+# specific, and carry sample text that must not ship in a public repository.
+tests/*
+!tests/test_*.py
 
 # Generated audio, except product UI style previews.
 static/audio/*
