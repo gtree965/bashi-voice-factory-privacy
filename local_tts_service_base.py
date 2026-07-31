@@ -94,3 +94,7 @@ class LocalTTSServiceBase:
 
     def synthesize_long_stream(self, *args, **kwargs):
         raise NotImplementedError
+
+    def count_long_groups(self, text: str) -> int | None:
+        """Return the long-mode group count when the backend exposes one."""
+        return None

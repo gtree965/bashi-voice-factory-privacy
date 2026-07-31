@@ -63,9 +63,21 @@ def split_long_sentence(sentence: str, limit: int, is_cjk: bool = False) -> list
     def measure(text: str):
         return len(text) if is_cjk else len(text.split())
 
+    def _hard_split(text: str):
+        if is_cjk:
+            return [text[i : i + limit] for i in range(0, len(text), limit)]
+
+        words = text.split()
+        return [" ".join(words[i : i + limit]) for i in range(0, len(words), limit)]
+
     def split_recursively(part: str):
         if measure(part) <= limit:
             return [part]
+        # A strategy that returns the whole sentence unchanged would recurse forever
+        # (e.g. a CJK clause ending in "；": re-joining text + separator reproduces the
+        # input exactly). Fall back to the terminal fixed-width split instead.
+        if part == sentence:
+            return _hard_split(part)
         return split_long_sentence(part, limit, is_cjk)
 
     if is_cjk and re.search(r"[，、]", sentence):
@@ -140,11 +152,7 @@ def split_long_sentence(sentence: str, limit: int, is_cjk: bool = False) -> list
         if len(result) > 1:
             return result
 
-    if is_cjk:
-        return [sentence[i : i + limit] for i in range(0, len(sentence), limit)]
-
-    words = sentence.split()
-    return [" ".join(words[i : i + limit]) for i in range(0, len(words), limit)]
+    return _hard_split(sentence)
 
 
 def split_into_chunks(text: str, max_words: int = 0, newline_hard: bool = True) -> list:
@@ -632,6 +640,7 @@ def estimate_synthesis_time():
         synthesis_mode = "auto"
     char_count = len(text.strip())
     chunk_count = _kernel_stream_chunk_count(text)
+    group_count = service.count_long_groups(text) if synthesis_mode == "long" else None
     estimate = _estimate_from_benchmark(
         char_count,
         benchmark,
@@ -659,6 +668,7 @@ def estimate_synthesis_time():
             "success": True,
             "char_count": char_count,
             "chunk_count": chunk_count,
+            "group_count": group_count,
             "estimate": estimate,
             "references": references,
             "has_benchmark": estimate is not None,

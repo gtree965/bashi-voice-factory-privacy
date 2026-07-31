@@ -33,6 +33,36 @@ from utils import cleanup_old_files  # noqa: E402
 logger = get_logger(__name__)
 
 
+def _ascii_log_text(value: object) -> str:
+    """Preserve localized details in an ASCII-safe form for app.log."""
+    return str(value).encode("ascii", errors="backslashreplace").decode("ascii")
+
+
+def _probe_failure_causes(detail: str) -> tuple[list[str], list[str]]:
+    """Return separate English-log and Chinese-console failure causes."""
+    english_causes = [
+        "  - GGUF runtime model files missing or corrupted -",
+        "    re-run the launcher to re-download from ModelScope.",
+        "  - Vulkan / DirectML drivers outdated - update GPU driver.",
+        "  - Insufficient RAM (need >= 8 GB free for 1.7B model).",
+    ]
+    chinese_causes = [
+        "  - GGUF 运行模型文件缺失或损坏 —— 请重新运行启动器从 ModelScope 下载。",
+        "  - Vulkan / DirectML 驱动过旧 —— 请更新显卡驱动。",
+        "  - 内存不足（1.7B 模型需要至少 8 GB 可用内存）。",
+    ]
+    if "[LOCKED]" in detail:
+        english_causes.insert(
+            0,
+            "  - Another copy may already be running - close it and try again.",
+        )
+        chinese_causes.insert(
+            0,
+            "  - 可能已有另一个副本正在运行 —— 请先关闭它再重试。",
+        )
+    return english_causes, chinese_causes
+
+
 def create_app() -> Flask:
     from stt_routes import MAX_UPLOAD_BYTES, UPLOAD_DIR, stt_bp
     from tts_routes import OUTPUT_DIR, VERSION, tts_bp
@@ -65,40 +95,36 @@ def _bootstrap_backend_or_exit() -> None:
     try:
         result = bootstrap_backend_selection()
     except BackendOverrideConflictError as exc:
-        logger.error("[Backend Selector] Startup aborted: %s", exc)
+        logger.error("[Backend Selector] Startup aborted: %s", _ascii_log_text(exc))
         raise SystemExit(2)
     except BackendProbeError as exc:
         app_root = os.path.dirname(os.path.abspath(__file__))
         app_log_path = os.path.join(app_root, "app.log")
         launcher_log_path = os.path.join(app_root, "launch_log.txt")
         sep = "=" * 60
+        english_causes, chinese_causes = _probe_failure_causes(str(exc))
         logger.error(sep)
         logger.error("[Backend Selector] No usable backend was found.")
-        logger.error("  Detail: %s", exc)
+        logger.error("  Detail: %s", _ascii_log_text(exc))
+        print(f"  详细信息: {exc}")
         logger.error("")
-        logger.error("Most common causes / 常见原因:")
-        logger.error("  - GGUF runtime model files missing or corrupted —")
-        logger.error("    re-run the launcher to re-download from ModelScope.")
-        logger.error("    GGUF 运行模型文件缺失或损坏 —— 请重新运行启动器从 ModelScope 下载。")
-        logger.error("  - Vulkan / DirectML drivers outdated — update GPU driver.")
-        logger.error("    Vulkan / DirectML 驱动过旧 —— 请更新显卡驱动。")
-        logger.error("  - Insufficient RAM (need >= 8 GB free for 1.7B model).")
-        logger.error("    内存不足（1.7B 模型需要至少 8 GB 可用内存）。")
+        logger.error("Most common causes:")
+        for cause_line in english_causes:
+            logger.error(cause_line)
+        print("常见原因:")
+        for cause_line in chinese_causes:
+            print(cause_line)
         logger.error("")
         logger.error(
             "  Full logs: %s (application), %s (launcher)",
-            app_log_path,
-            launcher_log_path,
+            _ascii_log_text(app_log_path),
+            _ascii_log_text(launcher_log_path),
         )
-        logger.error(
-            "  完整日志: %s（应用）, %s（启动器）",
-            app_log_path,
-            launcher_log_path,
-        )
+        print(f"  完整日志: {app_log_path}（应用）, {launcher_log_path}（启动器）")
         logger.error(sep)
         raise SystemExit(3)
 
-    logger.info(format_selection_log_line(result.selection))
+    logger.info(_ascii_log_text(format_selection_log_line(result.selection)))
 
 
 if __name__ == "__main__":
@@ -124,7 +150,7 @@ if __name__ == "__main__":
     logger.info("=" * 50)
     logger.info("Bashi Voice Factory Privacy Edition v%s", version)
     logger.info("Local TTS: Qwen3-TTS-12Hz-1.7B-CustomVoice")
-    logger.info("本地隐私版：Qwen3 本地语音 + sherpa 离线转写")
+    print("本地隐私版：Qwen3 本地语音 + sherpa 离线转写")
     logger.info("=" * 50)
 
     if args.host == "0.0.0.0":

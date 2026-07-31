@@ -25,6 +25,8 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 - **Safer STT defaults:** SenseVoice Small is now the default multilingual STT model, the Speaker ID UI is disabled, and Paraformer Chinese Large has been removed from the product.
 - **Upload and job-state hardening:** a server-side upload ceiling (2 GB by default) rejects oversized requests, and shared `stt_jobs` state is now lock-protected across background work and API reads.
 - **Reliable streaming:** affected frontend SSE readers now buffer data across network chunks, preventing split JSON lines or frames from being dropped or misparsed.
+- **Responsive streaming synthesis:** stop long or chunked synthesis at any time without losing completed chunks; they remain playable and individually downloadable. In Shadowing Mode, playback starts when the first chunk is ready by default (this can be disabled) and waits for later chunks instead of stopping early.
+- **Listen while long text is generated:** GGUF long-form synthesis now previews the first ready audio group and continues seamlessly as later groups arrive, with mute and adaptive buffering controls. The complete seekable/downloadable MP3 still appears when merging finishes, without interrupting an active preview.
 
 ---
 
@@ -35,6 +37,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 - **9 curated voice presets** with native-language sample previews built in.
 - **10 languages** supported: Chinese (Mandarin, Cantonese, Sichuanese, Beijing, Northeast), English (US/UK), Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian.
 - **Instruction control** for style, accent, emotion via natural-language prompts.
+- **Streaming controls for long text and Shadowing Mode**: stop synthesis while keeping completed chunks, auto-play the first ready chunk by default, and continue playback as later chunks arrive; GGUF long text also preserves a complete seekable/downloadable MP3 after the streamed preview.
 
 ### 🎯 Automatic Backend Selection
 - **GGUF + Vulkan** for AMD / Intel / iGPU users (default, fast, RAM-friendly).

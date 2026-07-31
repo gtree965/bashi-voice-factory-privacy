@@ -15,6 +15,7 @@ purpose. GGUF Metal stays out of v1 until real hardware validation exists.
 from __future__ import annotations
 
 import argparse
+import errno
 import importlib.metadata
 import json
 import os
@@ -646,6 +647,13 @@ def probe_pytorch_backend(
         duration = time.perf_counter() - start
         return ProbeOutcome(True, f"PyTorch probe succeeded in {duration:.2f}s")
     except Exception as exc:
+        if isinstance(exc, PermissionError) or getattr(exc, "errno", None) in (
+            errno.EACCES,
+            errno.EBUSY,
+        ):
+            # Stable ASCII marker: OS error messages are localized, so the
+            # presentation layer must never pattern-match strerror text.
+            return ProbeOutcome(False, f"[LOCKED] PyTorch probe failed: {exc}")
         return ProbeOutcome(False, f"PyTorch probe failed: {exc}")
     finally:
         if service is not None:
@@ -673,6 +681,13 @@ def probe_gguf_backend(
         duration = time.perf_counter() - start
         return ProbeOutcome(True, f"GGUF probe succeeded in {duration:.2f}s")
     except Exception as exc:
+        if isinstance(exc, PermissionError) or getattr(exc, "errno", None) in (
+            errno.EACCES,
+            errno.EBUSY,
+        ):
+            # Stable ASCII marker: OS error messages are localized, so the
+            # presentation layer must never pattern-match strerror text.
+            return ProbeOutcome(False, f"[LOCKED] GGUF probe failed: {exc}")
         return ProbeOutcome(False, f"GGUF probe failed: {exc}")
     finally:
         if service is not None:

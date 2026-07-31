@@ -34,6 +34,25 @@ const state = {
     isPlaying: false,
     isPaused: false,  // NEW: track paused state for toggle
     pauseDuration: 2, // seconds between sentences
+    synthesisAbort: null,
+    synthesisComplete: true,
+    synthesisStopped: false,
+    retryAfterStop: false,
+    waitingForNextChunk: false,
+    autoPlayFirstChunk: true,
+    // Long-form preview playback is intentionally isolated from sentence mode.
+    longChunks: [],
+    longChunkIndex: 0,
+    longPreviewPlaying: false,
+    longPreviewWaiting: false,
+    longPreviewMuted: false,
+    longChunkArrivalTimes: [],
+    lastGroupSeconds: null, // Cross-run telemetry for honest restart-wait guidance.
+    longPreviewStrategyDecided: false,
+    longPreviewBufferTarget: 0,
+    longPreviewGiveUp: false,
+    longTotal: 0,
+    longFinalAudioReady: false,
     // NEW: Chunking settings
     chunkingEnabled: true,
     maxWords: 15,  // Default: Medium (15 words)
@@ -83,6 +102,14 @@ const elements = {
     sentenceAudio: document.getElementById('sentence-audio'),
     progressFill: document.getElementById('progress-fill'),
     sentenceProgress: document.getElementById('sentence-progress'),
+    sentencePlaybackStatus: document.getElementById('sentence-playback-status'),
+    longPreviewAudio: document.getElementById('long-preview-audio'),
+    longPreviewStatus: document.getElementById('long-preview-status'),
+    longPreviewToggle: document.getElementById('long-preview-toggle'),
+    longStopBtn: document.getElementById('long-stop-btn'),
+    sentenceStopBtn: document.getElementById('sentence-stop-btn'),
+    autoplaySetting: document.getElementById('autoplay-setting'),
+    autoplayFirstChunk: document.getElementById('autoplay-first-chunk'),
     pauseSetting: document.getElementById('pause-setting'),
     modeHint: document.getElementById('mode-hint'),
     fileInput: document.getElementById('file-input'),
@@ -136,6 +163,51 @@ const SINGLE_SYNTHESIS_LIMITS = {
 };
 const STYLE_PREVIEW_VERSION = 'native-language-v2';
 const FIRST_RUN_STORAGE_KEY = 'bashi_first_run_completed';
+const AUTOPLAY_FIRST_CHUNK_STORAGE_KEY = 'bashi_autoplay_first_chunk';
+const RESTART_RETRY_BUDGET_MS = 60000;
+const RESTART_RETRY_BASE_DELAY_MS = 250;
+const RESTART_RETRY_MAX_DELAY_MS = 750;
+const LONG_PREVIEW_GAP_MS = 350;
+
+/**
+ * Choose the one-time long-preview rebuffer target from
+ * S ≥ i·t − (i−1)·d. `elapsed` is stable generation-equivalent time already
+ * represented by arrived groups (the caller excludes first-group warm-up).
+ * This is pure and exported so the browser console can exercise slow paths.
+ */
+function calculateLongPreviewBufferStrategy({ n, t, d, elapsed = 0 } = {}) {
+    const total = Number(n);
+    const generationSeconds = Number(t);
+    const playbackSeconds = Number(d);
+    const elapsedSeconds = Math.max(0, Number(elapsed) || 0);
+    if (!(total > 0) || !(generationSeconds > 0) || !(playbackSeconds > 0)) {
+        return { shouldStart: false, chunksNeeded: 1, giveUp: false };
+    }
+
+    const requiredBufferSeconds = generationSeconds <= playbackSeconds
+        ? generationSeconds
+        : total * generationSeconds - (total - 1) * playbackSeconds;
+    const giveUp = requiredBufferSeconds > 0.8 * total * generationSeconds;
+    const completedChunks = Math.min(
+        total,
+        Math.floor((elapsedSeconds / generationSeconds) + Number.EPSILON)
+    );
+    const additionalChunks = Math.ceil(
+        Math.max(0, requiredBufferSeconds - elapsedSeconds) / generationSeconds
+    );
+    const chunksNeeded = Math.min(
+        total,
+        Math.max(1, completedChunks + additionalChunks)
+    );
+
+    return {
+        shouldStart: !giveUp && completedChunks >= chunksNeeded,
+        chunksNeeded,
+        giveUp
+    };
+}
+
+window.calculateLongPreviewBufferStrategy = calculateLongPreviewBufferStrategy;
 
 const STYLE_PRESETS = [
     {
@@ -783,9 +855,11 @@ function renderEta(data = state.eta) {
     }
 
     const chunks = data.chunk_count || 0;
+    const hasGroupCount = data.group_count !== null && data.group_count !== undefined;
+    const displayedCount = hasGroupCount ? data.group_count : chunks;
     const workUnit = data.synthesis_mode === 'single'
         ? t('single pass', '单次合成')
-        : `${chunks} ${t('chunks', '段')}`;
+        : `${displayedCount} ${hasGroupCount ? t('groups', '组') : t('chunks', '段')}`;
     let html = '';
     if (data.estimate?.low && data.estimate?.high) {
         const low = state.currentLang === 'zh' ? data.estimate.low.display_zh : data.estimate.low.display_en;
@@ -796,7 +870,7 @@ function renderEta(data = state.eta) {
             : t('Based on quick benchmark, rough range only.', '基于快速测速，仅为粗略范围。');
         html += `<div>${escapeHtml(estimateSourceText)}</div>`;
     } else {
-        html = `<div><strong>${escapeHtml(t('Current text', '当前文本'))}</strong>: ${chars.toLocaleString()} ${escapeHtml(t('chars', '字'))} · ${chunks} ${escapeHtml(t('chunks', '段'))}</div>`;
+        html = `<div><strong>${escapeHtml(t('Current text', '当前文本'))}</strong>: ${chars.toLocaleString()} ${escapeHtml(t('chars', '字'))} · ${escapeHtml(workUnit)}</div>`;
     }
 
     warnings.forEach(warning => {
@@ -852,6 +926,7 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
     await loadVoices();
     await loadSttModels();
+    restoreAutoplayPreference();
     setupEventListeners();
     renderStylePresets();
     renderFirstRunBanner();
@@ -863,6 +938,14 @@ async function init() {
     const savedLang = localStorage.getItem('bashi_lang') || localStorage.getItem('edgetts_lang');
     if (savedLang) {
         switchLanguage(savedLang);
+    }
+}
+
+function restoreAutoplayPreference() {
+    const saved = localStorage.getItem(AUTOPLAY_FIRST_CHUNK_STORAGE_KEY);
+    state.autoPlayFirstChunk = saved !== 'false';
+    if (elements.autoplayFirstChunk) {
+        elements.autoplayFirstChunk.checked = state.autoPlayFirstChunk;
     }
 }
 
@@ -1002,6 +1085,7 @@ function selectVoice(voiceId) {
 
 // Set Playback Mode
 function setPlaybackMode(mode) {
+    stopLongPreview();
     state.playbackMode = mode;
 
     // Update mode buttons
@@ -1177,8 +1261,19 @@ function setupEventListeners() {
         elements.pauseValue.textContent = `${state.pauseDuration}s`;
     });
 
+    elements.autoplayFirstChunk?.addEventListener('change', () => {
+        state.autoPlayFirstChunk = elements.autoplayFirstChunk.checked;
+        localStorage.setItem(
+            AUTOPLAY_FIRST_CHUNK_STORAGE_KEY,
+            String(state.autoPlayFirstChunk)
+        );
+    });
+
     // Generate Button
     elements.generateBtn.addEventListener('click', generateSpeech);
+    elements.longStopBtn?.addEventListener('click', stopSynthesis);
+    elements.sentenceStopBtn?.addEventListener('click', stopSynthesis);
+    elements.longPreviewToggle?.addEventListener('click', toggleLongPreview);
 
     // Download Button
     if (elements.downloadBtn) {
@@ -1194,6 +1289,21 @@ function setupEventListeners() {
 
     // Sentence audio ended event
     elements.sentenceAudio.addEventListener('ended', onSentenceEnded);
+    elements.longPreviewAudio?.addEventListener('ended', onLongPreviewEnded);
+    // The complete file takes over the moment the user starts it: otherwise the
+    // hidden preview element and #audio-player would play the same content at two
+    // different positions.
+    elements.audioPlayer?.addEventListener('play', () => {
+        if (!state.longPreviewPlaying) return;
+        haltLongPreviewAudio();
+        setLongPreviewStatus('', '', false);
+        updateLongPreviewToggle();
+        const progressDiv = document.getElementById('long-text-progress');
+        if (progressDiv && state.synthesisComplete) {
+            progressDiv.style.display = 'none';
+            setLongProgressPlayoutMode(null);
+        }
+    });
 
     // TXT File Upload - Click
     if (elements.uploadBtn) {
@@ -1307,8 +1417,21 @@ async function generateSpeech() {
         return;
     }
 
+    stopLongPreview();
+
     // Get settings
     const instruct = buildInstruct();
+    const sentenceMode = state.playbackMode === 'sentence';
+    const longMode = !sentenceMode && shouldUseLongSynthesis(text);
+    const controller = sentenceMode || longMode ? new AbortController() : null;
+    const retryAfterStop = state.retryAfterStop;
+    state.retryAfterStop = false;
+    if (controller) {
+        state.synthesisAbort = controller;
+        state.synthesisComplete = false;
+        state.synthesisStopped = false;
+        setSynthesisStopMode(sentenceMode ? 'sentence' : 'long');
+    }
 
     // Show loading state
     elements.generateBtn.style.display = 'none';
@@ -1324,25 +1447,49 @@ async function generateSpeech() {
     elements.playerSection.style.display = 'none';
     elements.sentencePlayerSection.style.display = 'none';
     const progressDiv = document.getElementById('long-text-progress');
-    if (progressDiv) progressDiv.style.display = 'none';
+    if (progressDiv) {
+        progressDiv.style.display = 'none';
+        setLongProgressPlayoutMode(null);
+    }
 
     try {
-        if (state.playbackMode === 'sentence') {
-            await generateSentences(text, instruct);
+        if (sentenceMode) {
+            await generateSentences(text, instruct, controller.signal, retryAfterStop);
         } else {
-            if (shouldUseLongSynthesis(text)) {
+            if (longMode) {
                 // Hide generic spinner since long audio has its own detailed progress bar
                 elements.loading.classList.remove('active');
-                await generateLongAudio(text, instruct);
+                await generateLongAudio(text, instruct, controller.signal, retryAfterStop);
             } else {
-                await generateSingleAudio(text, instruct);
+                await generateSingleAudio(text, instruct, retryAfterStop);
             }
         }
     } catch (error) {
+        if (error.name === 'AbortError') {
+            clearLongProgressAnim();
+            clearSentenceProgressAnim();
+            if (progressDiv && (!longMode || !state.longPreviewPlaying)) {
+                progressDiv.style.display = 'none';
+                setLongProgressPlayoutMode(null);
+            }
+            if (sentenceMode) {
+                finishSentenceSynthesis(true);
+            } else {
+                state.synthesisComplete = true;
+            }
+            showToast(t('Synthesis stopped. Generated chunks are still available.', '已停止合成，已生成的片段仍可使用。'), 'info');
+            return;
+        }
+        if (sentenceMode) {
+            finishSentenceSynthesis(false);
+        }
         console.error('Synthesis error:', error);
         clearLongProgressAnim();
         clearSentenceProgressAnim();
-        if (progressDiv) progressDiv.style.display = 'none';
+        if (progressDiv && (!longMode || !state.longPreviewPlaying)) {
+            progressDiv.style.display = 'none';
+            setLongProgressPlayoutMode(null);
+        }
         const msg = state.currentLang === 'zh' ? '生成失败，请重试' : 'Generation failed, please try again';
         showToast(msg, 'error');
     } finally {
@@ -1351,20 +1498,146 @@ async function generateSpeech() {
         // Hide loading state
         elements.generateBtn.style.display = 'flex';
         elements.loading.classList.remove('active');
+        setSynthesisStopMode(null);
+        if (state.synthesisAbort === controller) {
+            state.synthesisAbort = null;
+        }
+        if (longMode) {
+            state.synthesisComplete = true;
+        }
+    }
+}
+
+function setSynthesisStopMode(mode) {
+    if (elements.longStopBtn) {
+        elements.longStopBtn.style.display = mode === 'long' ? 'inline-flex' : 'none';
+    }
+    if (elements.sentenceStopBtn) {
+        elements.sentenceStopBtn.style.display = mode === 'sentence' ? 'inline-flex' : 'none';
+    }
+}
+
+function stopSynthesis() {
+    if (!state.synthesisAbort) return;
+    state.synthesisStopped = true;
+    state.synthesisComplete = true;
+    state.retryAfterStop = true;
+    state.synthesisAbort.abort();
+}
+
+function showRestartRetryStatus(groupFinishDeadline = null) {
+    let en = 'Stopping previous synthesis...';
+    let zh = '正在停止上一次合成…';
+    if (Number.isFinite(groupFinishDeadline)) {
+        const remainingSeconds = Math.ceil((groupFinishDeadline - Date.now()) / 1000);
+        if (remainingSeconds > 0) {
+            en = `Finishing the previous chunk; starting in up to ${remainingSeconds}s`;
+            zh = `上一段合成收尾中，最多约 ${remainingSeconds} 秒后开始`;
+        } else {
+            en = 'Starting shortly...';
+            zh = '即将开始…';
+        }
+    }
+    const statusElements = [
+        elements.loading?.querySelector('span'),
+        document.getElementById('long-progress-text')
+    ];
+    statusElements.forEach(element => {
+        if (!element) return;
+        element.setAttribute('data-en', en);
+        element.setAttribute('data-zh', zh);
+        element.textContent = state.currentLang === 'zh' ? zh : en;
+    });
+}
+
+function clearRestartRetryStatus() {
+    const initialStatuses = [
+        [elements.loading?.querySelector('span'), 'Generating...', '正在生成...'],
+        [document.getElementById('long-progress-text'), 'Initializing...', '初始化...']
+    ];
+    initialStatuses.forEach(([element, en, zh]) => {
+        if (!element) return;
+        element.setAttribute('data-en', en);
+        element.setAttribute('data-zh', zh);
+        element.textContent = state.currentLang === 'zh' ? zh : en;
+    });
+}
+
+function waitForRetryDelay(delayMs, signal) {
+    if (signal?.aborted) {
+        return Promise.reject(new DOMException('Synthesis aborted', 'AbortError'));
+    }
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, delayMs);
+        const onAbort = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
+            reject(new DOMException('Synthesis aborted', 'AbortError'));
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+async function postSynthesisWithRetry(url, payload, { signal, retryAfterStop = false } = {}) {
+    const deadline = Date.now() + RESTART_RETRY_BUDGET_MS;
+    let retryIndex = 0;
+    let groupFinishDeadline = null;
+
+    while (true) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal,
+            body: JSON.stringify(payload)
+        });
+        if (response.status !== 409 || !retryAfterStop) {
+            if (response.ok) {
+                clearRestartRetryStatus();
+            }
+            return response;
+        }
+
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+            return response;
+        }
+
+        if (
+            retryIndex === 0
+            && url === '/api/synthesize-long'
+            && Number.isFinite(state.lastGroupSeconds)
+            && state.lastGroupSeconds > 0
+        ) {
+            groupFinishDeadline = Date.now() + state.lastGroupSeconds * 1000;
+        }
+        showRestartRetryStatus(groupFinishDeadline);
+        const backoffMs = Math.min(
+            RESTART_RETRY_BASE_DELAY_MS * (2 ** retryIndex),
+            RESTART_RETRY_MAX_DELAY_MS,
+            remainingMs
+        );
+        retryIndex++;
+        await waitForRetryDelay(backoffMs, signal);
+        if (Date.now() >= deadline) {
+            return response;
+        }
     }
 }
 
 // Generate Single Audio
-async function generateSingleAudio(text, instruct) {
-    const response = await fetch('/api/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+async function generateSingleAudio(text, instruct, retryAfterStop = false) {
+    const response = await postSynthesisWithRetry(
+        '/api/synthesize',
+        {
             text: text,
             voice: state.selectedVoice,
             instruct: instruct
-        })
-    });
+        },
+        { retryAfterStop }
+    );
 
     const result = await response.json();
 
@@ -1384,16 +1657,285 @@ async function generateSingleAudio(text, instruct) {
     }
 }
 
+function setLongPreviewStatus(en, zh, visible = true) {
+    if (!elements.longPreviewStatus) return;
+    elements.longPreviewStatus.setAttribute('data-en', en);
+    elements.longPreviewStatus.setAttribute('data-zh', zh);
+    elements.longPreviewStatus.textContent = state.currentLang === 'zh' ? zh : en;
+    elements.longPreviewStatus.style.display = visible ? 'inline' : 'none';
+}
+
+function setLongProgressPlayoutMode(mode) {
+    const progressDiv = document.getElementById('long-text-progress');
+    if (!progressDiv) return;
+
+    const spinner = progressDiv.querySelector('.spinner');
+    const headline = document.getElementById('long-progress-headline');
+    const metrics = document.getElementById('long-progress-metrics');
+    const hint = document.getElementById('long-progress-hint');
+    const isPlayout = mode === 'stopped' || mode === 'completed';
+    let en = 'Generating...';
+    let zh = '正在生成...';
+    if (mode === 'stopped') {
+        en = 'Synthesis stopped';
+        zh = '已停止合成';
+    } else if (mode === 'completed') {
+        en = 'Synthesis complete';
+        zh = '合成完成';
+    }
+
+    if (spinner) spinner.style.display = isPlayout ? 'none' : '';
+    if (headline) {
+        headline.setAttribute('data-en', en);
+        headline.setAttribute('data-zh', zh);
+        headline.textContent = state.currentLang === 'zh' ? zh : en;
+    }
+    if (metrics) metrics.style.display = isPlayout ? 'none' : '';
+    if (hint) hint.style.display = isPlayout ? 'none' : '';
+}
+
+function updateLongPreviewToggle() {
+    if (!elements.longPreviewToggle) return;
+    const icon = elements.longPreviewToggle.querySelector('.long-preview-toggle-icon');
+    const label = elements.longPreviewToggle.querySelector('.long-preview-toggle-text');
+    const audible = state.longPreviewPlaying && !state.longPreviewMuted;
+    elements.longPreviewToggle.disabled = state.longChunks.length === 0 || state.longPreviewGiveUp;
+    if (icon) icon.textContent = audible ? '🔇' : '🔊';
+    if (label) {
+        const en = audible ? 'Mute preview' : 'Preview';
+        const zh = audible ? '静音试听' : '试听';
+        label.setAttribute('data-en', en);
+        label.setAttribute('data-zh', zh);
+        label.textContent = state.currentLang === 'zh' ? zh : en;
+    }
+}
+
+function resetLongPreviewState() {
+    state.longChunks = [];
+    state.longChunkIndex = 0;
+    state.longPreviewPlaying = false;
+    state.longPreviewWaiting = false;
+    state.longPreviewMuted = false;
+    state.longChunkArrivalTimes = [];
+    state.longPreviewStrategyDecided = false;
+    state.longPreviewBufferTarget = 0;
+    state.longPreviewGiveUp = false;
+    state.longTotal = 0;
+    state.longFinalAudioReady = false;
+    // Cross-run group timing telemetry is deliberately preserved: restart status
+    // still needs the previous run after stopLongPreview clears per-run state.
+}
+
+function haltLongPreviewAudio() {
+    if (elements.longPreviewAudio) {
+        elements.longPreviewAudio.pause();
+        elements.longPreviewAudio.removeAttribute('src');
+        elements.longPreviewAudio.muted = false;
+        elements.longPreviewAudio.load();
+    }
+    state.longPreviewPlaying = false;
+    state.longPreviewWaiting = false;
+    state.longPreviewMuted = false;
+}
+
+function stopLongPreview() {
+    haltLongPreviewAudio();
+    resetLongPreviewState();
+    setLongPreviewStatus('', '', false);
+    updateLongPreviewToggle();
+}
+
+function completeLongPreviewPlayback() {
+    if (!state.longPreviewPlaying && !state.longPreviewWaiting) return;
+    haltLongPreviewAudio();
+    setLongPreviewStatus('', '', false);
+    updateLongPreviewToggle();
+    const progressDiv = document.getElementById('long-text-progress');
+    if (progressDiv) {
+        progressDiv.style.display = 'none';
+        setLongProgressPlayoutMode(null);
+    }
+    if (state.longFinalAudioReady) {
+        showToast(
+            t(
+                'Complete audio is ready for seeking and download.',
+                '完整音频已就绪，可拖动和下载。'
+            ),
+            'success'
+        );
+    } else if (state.synthesisStopped) {
+        showToast(t('Generated preview playback complete.', '已生成的试听片段播放完毕。'), 'info');
+    }
+}
+
+function updateLongPreviewBufferingStatus() {
+    const buffered = state.longChunks.length;
+    const total = state.longTotal || buffered;
+    setLongPreviewStatus(
+        `Buffering for continuous playback... (${buffered}/${total} chunks buffered)`,
+        `正在缓冲，稍后连续播放…（已缓冲 ${buffered}/${total} 组）`
+    );
+}
+
+function resolveLongPreviewWaiting() {
+    if (!state.longPreviewWaiting) return;
+    if (state.longPreviewGiveUp) {
+        setLongPreviewStatus(
+            'This machine synthesizes slower than real time; playback will start when synthesis finishes.',
+            '本机生成较慢，将在合成完成后连续播放。'
+        );
+        return;
+    }
+
+    if (!state.longPreviewStrategyDecided) {
+        if (state.longChunkArrivalTimes.length < 2) {
+            setLongPreviewStatus('Waiting for next chunk...', '等待下一组合成…');
+            return;
+        }
+        const intervals = state.longChunkArrivalTimes.slice(1).map(
+            (arrival, index) => arrival - state.longChunkArrivalTimes[index]
+        );
+        const tSeconds = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+        const durations = state.longChunks
+            .map(chunk => Number(chunk.duration))
+            .filter(duration => duration > 0);
+        const dSeconds = durations.reduce((sum, value) => sum + value, 0) / durations.length;
+        const strategy = calculateLongPreviewBufferStrategy({
+            n: state.longTotal || state.longChunks.length,
+            t: tSeconds,
+            d: dSeconds,
+            elapsed: state.longChunks.length * tSeconds
+        });
+        state.longPreviewStrategyDecided = true;
+        state.longPreviewBufferTarget = strategy.chunksNeeded;
+        state.longPreviewGiveUp = strategy.giveUp;
+        if (strategy.giveUp) {
+            state.longPreviewPlaying = false;
+            updateLongPreviewToggle();
+            setLongPreviewStatus(
+                'This machine synthesizes slower than real time; playback will start when synthesis finishes.',
+                '本机生成较慢，将在合成完成后连续播放。'
+            );
+            return;
+        }
+    }
+
+    if (
+        state.longChunkIndex < state.longChunks.length
+        && state.longChunks.length >= state.longPreviewBufferTarget
+    ) {
+        state.longPreviewWaiting = false;
+        setLongPreviewStatus('', '', false);
+        playLongPreview(state.longChunkIndex);
+        return;
+    }
+    updateLongPreviewBufferingStatus();
+}
+
+function playLongPreview(index) {
+    if (state.longPreviewGiveUp) return;
+    if (index >= state.longChunks.length) {
+        if (!state.synthesisComplete) {
+            state.longChunkIndex = index;
+            state.longPreviewWaiting = true;
+            // Keep the preview session active across a planned buffer wait so a
+            // later `done` event never jumps the listener back to final-audio 0:00.
+            state.longPreviewPlaying = true;
+            resolveLongPreviewWaiting();
+            updateLongPreviewToggle();
+            return;
+        }
+        completeLongPreviewPlayback();
+        return;
+    }
+
+    elements.audioPlayer.pause();
+    state.longChunkIndex = index;
+    state.longPreviewWaiting = false;
+    state.longPreviewPlaying = true;
+    setLongPreviewStatus('', '', false);
+
+    // Keep native <audio> + MP3 for Windows/macOS/Linux browser parity; do not
+    // replace this preview path with MSE or custom WebAudio decoding.
+    elements.longPreviewAudio.src = state.longChunks[index].audio_url;
+    elements.longPreviewAudio.muted = state.longPreviewMuted;
+    elements.longPreviewAudio.play().catch(() => {
+        state.longPreviewPlaying = false;
+        updateLongPreviewToggle();
+    });
+    updateLongPreviewToggle();
+}
+
+function onLongPreviewEnded() {
+    if (!state.longPreviewPlaying) return;
+    state.longChunkIndex++;
+    setTimeout(() => {
+        if (state.longPreviewPlaying) {
+            playLongPreview(state.longChunkIndex);
+        }
+    }, LONG_PREVIEW_GAP_MS);
+}
+
+function toggleLongPreview() {
+    if (state.longChunks.length === 0 || state.longPreviewGiveUp) return;
+    if (!state.longPreviewPlaying) {
+        state.longPreviewMuted = false;
+        playLongPreview(Math.min(state.longChunkIndex, state.longChunks.length - 1));
+        return;
+    }
+    state.longPreviewMuted = !state.longPreviewMuted;
+    elements.longPreviewAudio.muted = state.longPreviewMuted;
+    updateLongPreviewToggle();
+}
+
+function handleLongPreviewChunk(data) {
+    if (!data.audio_url) return;
+    state.longTotal = Number(data.total) || state.longTotal;
+    state.longChunks.push({
+        audio_url: data.audio_url,
+        filename: data.filename,
+        duration: Number(data.duration) || 0,
+        chunk: data.chunk
+    });
+    state.longChunkArrivalTimes.push(performance.now() / 1000);
+    if (state.longChunkArrivalTimes.length >= 2) {
+        const intervals = state.longChunkArrivalTimes.slice(1).map(
+            (arrival, index) => arrival - state.longChunkArrivalTimes[index]
+        );
+        state.lastGroupSeconds = intervals.reduce((sum, value) => sum + value, 0)
+            / intervals.length;
+    }
+    updateLongPreviewToggle();
+
+    if (
+        state.longChunks.length === 1
+        && state.autoPlayFirstChunk
+        && state.longTotal > 1
+    ) {
+        playLongPreview(0);
+    } else if (state.longPreviewWaiting) {
+        resolveLongPreviewWaiting();
+    }
+}
+
 // Generate Long Audio via SSE
-async function generateLongAudio(text, instruct) {
+async function generateLongAudio(text, instruct, signal, retryAfterStop = false) {
     const progressDiv = document.getElementById('long-text-progress');
     const fill = document.getElementById('long-progress-fill');
     const textEl = document.getElementById('long-progress-text');
     const countEl = document.getElementById('long-progress-count');
 
+    stopLongPreview();
+    setLongProgressPlayoutMode(null);
+    state.synthesisComplete = false;
     progressDiv.style.display = 'block';
     fill.style.width = '0%';
     setProgressAnim(fill, true);
+    const estimatedGroupCount = state.eta?.group_count;
+    const initialGroupTotal = Number.isInteger(estimatedGroupCount) && estimatedGroupCount >= 0
+        ? estimatedGroupCount
+        : 0;
+    countEl.textContent = `0 / ${initialGroupTotal}`;
 
     // Switch to English text immediately if needed to avoid flicker
     textEl.setAttribute('data-en', 'Initializing...');
@@ -1401,15 +1943,28 @@ async function generateLongAudio(text, instruct) {
     textEl.textContent = state.currentLang === 'zh' ? '初始化...' : 'Initializing...';
 
     try {
-        const response = await fetch('/api/synthesize-long', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+        const response = await postSynthesisWithRetry(
+            '/api/synthesize-long',
+            {
                 text: text,
                 voice: state.selectedVoice,
                 instruct: instruct
-            })
-        });
+            },
+            { signal, retryAfterStop }
+        );
+
+        if (!response.ok) {
+            clearLongProgressAnim();
+            progressDiv.style.display = 'none';
+            setLongProgressPlayoutMode(null);
+            let errBody = {};
+            try { errBody = await response.json(); } catch (_) { /* non-JSON body */ }
+            const errorMsg = state.currentLang === 'zh'
+                ? (errBody.error_zh || errBody.error || '长文本生成失败')
+                : (errBody.error || errBody.error_zh || 'Long text generation failed');
+            showToast(errorMsg, 'error');
+            return;
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -1431,13 +1986,17 @@ async function generateLongAudio(text, instruct) {
                     const data = JSON.parse(dataStr);
 
                     if (data.status === 'generating') {
+                        state.longTotal = Number(data.total) || state.longTotal;
                         const percent = ((data.chunk - 1) / data.total) * 100;
                         fill.style.width = `${percent}%`;
                         countEl.textContent = `${data.chunk} / ${data.total}`;
 
-                        textEl.setAttribute('data-en', `Generating chunk ${data.chunk}...`);
+                        textEl.setAttribute('data-en', `Generating group ${data.chunk}...`);
                         textEl.setAttribute('data-zh', `正在生成第 ${data.chunk} 组...`);
-                        textEl.textContent = state.currentLang === 'zh' ? `正在生成第 ${data.chunk} 组...` : `Generating chunk ${data.chunk}...`;
+                        textEl.textContent = state.currentLang === 'zh' ? `正在生成第 ${data.chunk} 组...` : `Generating group ${data.chunk}...`;
+                    }
+                    else if (data.status === 'chunk_done') {
+                        handleLongPreviewChunk(data);
                     }
                     else if (data.status === 'merging') {
                         clearLongProgressAnim();
@@ -1451,15 +2010,48 @@ async function generateLongAudio(text, instruct) {
                         fill.style.width = '100%';
                         state.currentAudioUrl = data.audio_url_mp3;
                         elements.audioPlayer.src = data.audio_url_mp3;
-
+                        state.longFinalAudioReady = true;
+                        state.synthesisComplete = true;
                         elements.playerSection.style.display = 'block';
-                        progressDiv.style.display = 'none';
 
-                        // Auto-play
-                        elements.audioPlayer.play().catch(() => { });
+                        // `chunk_done` is optional: a skipped group or preview
+                        // encoding failure can leave the preview waiting for an
+                        // index that will never arrive. Once `done` is known, play
+                        // any remaining preview URL or fall back to the final file.
+                        if (
+                            state.longPreviewWaiting
+                            && !state.longPreviewGiveUp
+                            && state.longChunkIndex < state.longChunks.length
+                        ) {
+                            state.longPreviewWaiting = false;
+                            playLongPreview(state.longChunkIndex);
+                        } else if (
+                            state.longPreviewWaiting
+                            && state.longChunkIndex >= state.longChunks.length
+                        ) {
+                            haltLongPreviewAudio();
+                            setLongPreviewStatus('', '', false);
+                        }
 
-                        const msg = state.currentLang === 'zh' ? '长文本语音生成完成！' : 'Long text speech generated successfully!';
-                        showToast(msg, 'success');
+                        const previewContinues = state.longPreviewPlaying && !state.longPreviewMuted;
+                        if (previewContinues) {
+                            setLongProgressPlayoutMode('completed');
+                            progressDiv.style.display = 'block';
+                            setLongPreviewStatus(
+                                'Complete audio is ready; finishing streamed preview...',
+                                '完整音频已就绪，正在播完流式试听…'
+                            );
+                        } else {
+                            haltLongPreviewAudio();
+                            updateLongPreviewToggle();
+                            progressDiv.style.display = 'none';
+                            setLongProgressPlayoutMode(null);
+                            elements.audioPlayer.play().catch(() => { });
+                            const msg = state.currentLang === 'zh'
+                                ? '长文本语音生成完成！'
+                                : 'Long text speech generated successfully!';
+                            showToast(msg, 'success');
+                        }
 
                         // Hide loading spinner since we are done
                         elements.generateBtn.style.display = 'flex';
@@ -1474,9 +2066,26 @@ async function generateLongAudio(text, instruct) {
             }
         }
     } catch (error) {
+        if (error.name === 'AbortError') {
+            if (state.longPreviewPlaying) {
+                setLongProgressPlayoutMode('stopped');
+                progressDiv.style.display = 'block';
+                setLongPreviewStatus(
+                    'Synthesis stopped; playing generated preview chunks...',
+                    '合成已停止，正在播完已生成的试听片段…'
+                );
+            } else {
+                progressDiv.style.display = 'none';
+                setLongProgressPlayoutMode(null);
+            }
+            throw error;
+        }
         console.error('Long synthesis error:', error);
         clearLongProgressAnim();
-        progressDiv.style.display = 'none';
+        if (!state.longPreviewPlaying) {
+            progressDiv.style.display = 'none';
+            setLongProgressPlayoutMode(null);
+        }
         const msg = state.currentLang === 'zh' ? '长文本生成失败，请重试' : 'Long text generation failed, please try again';
         showToast(msg, 'error');
         throw error; // Let main logic catch it
@@ -1489,23 +2098,40 @@ async function generateLongAudio(text, instruct) {
 // Route streams one `generating` event then one `sentence_done` event per chunk,
 // followed by `done` (or `error`). We consume with fetch+ReadableStream because
 // EventSource is GET-only and can't send a JSON body.
-async function generateSentences(text, instruct) {
+async function generateSentences(text, instruct, signal, retryAfterStop = false) {
     setProgressAnim(elements.progressFill, true);
 
-    const response = await fetch('/api/synthesize-sentences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+    // Fresh run: reset state before opening the stream so Stop is available
+    // while the first chunk is still being generated.
+    state.sentences = [];
+    state.sentenceTotal = 0;
+    state.currentSentenceIndex = 0;
+    state.isPlaying = false;
+    state.isPaused = false;
+    state.waitingForNextChunk = false;
+    state.synthesisComplete = false;
+    state.synthesisStopped = false;
+    updateSentencePlaybackStatus();
+    elements.sentencePlayerSection.style.display = 'block';
+    renderSentenceList();
+    updateProgress();
+    updatePauseButton();
+
+    const response = await postSynthesisWithRetry(
+        '/api/synthesize-sentences',
+        {
             text: text,
             voice: state.selectedVoice,
             instruct: instruct,
             max_words: state.maxWords,
             newline_hard: state.newlineHard
-        })
-    });
+        },
+        { signal, retryAfterStop }
+    );
 
     if (!response.ok) {
         clearSentenceProgressAnim();
+        state.synthesisComplete = true;
         let errBody = {};
         try { errBody = await response.json(); } catch (_) { /* non-JSON body */ }
         const errorMsg = state.currentLang === 'zh'
@@ -1514,19 +2140,6 @@ async function generateSentences(text, instruct) {
         showToast(errorMsg, 'error');
         return;
     }
-
-    // Fresh run: reset state and make the chunk player visible so sentence_done
-    // events can append into a live list.
-    state.sentences = [];
-    state.sentenceTotal = 0;
-    state.currentSentenceIndex = 0;
-    state.isPlaying = false;
-    state.isPaused = false;
-
-    elements.sentencePlayerSection.style.display = 'block';
-    renderSentenceList();
-    updateProgress();
-    updatePauseButton();
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1557,6 +2170,17 @@ async function generateSentences(text, instruct) {
         }
     } finally {
         clearSentenceProgressAnim();
+    }
+    if (!state.synthesisComplete) {
+        finishSentenceSynthesis(false);
+    }
+}
+
+function finishSentenceSynthesis(stopped = false) {
+    state.synthesisComplete = true;
+    state.synthesisStopped = stopped || state.synthesisStopped;
+    if (state.waitingForNextChunk && state.currentSentenceIndex >= state.sentences.length) {
+        completeSentencePlayback();
     }
 }
 
@@ -1589,11 +2213,19 @@ function handleSentenceEvent(event) {
         });
         renderSentenceList();
         updateProgress();
+        if (state.waitingForNextChunk && state.currentSentenceIndex === state.sentences.length - 1) {
+            if (state.isPlaying) {
+                playSentence(state.currentSentenceIndex);
+            }
+        } else if (state.sentences.length === 1 && state.autoPlayFirstChunk) {
+            playAllSentences();
+        }
         return false;
     }
 
     if (event.status === 'done') {
         clearSentenceProgressAnim();
+        finishSentenceSynthesis(false);
         const total = event.total ?? state.sentenceTotal;
         const chunkWord = state.currentLang === 'zh' ? '个片段' : ' chunks';
         const msg = state.currentLang === 'zh'
@@ -1605,6 +2237,7 @@ function handleSentenceEvent(event) {
 
     if (event.status === 'error') {
         clearSentenceProgressAnim();
+        finishSentenceSynthesis(false);
         const errorMsg = event.error || (state.currentLang === 'zh' ? '生成失败' : 'Generation failed');
         showToast(errorMsg, 'error');
         return true;
@@ -1619,9 +2252,22 @@ function renderSentenceList() {
         <div class="sentence-item" id="sentence-${i}" onclick="playSentence(${i})">
             <span class="sentence-number">${i + 1}</span>
             <span class="sentence-text">${escapeHtml(s.text)}</span>
-            <button class="sentence-play-btn" onclick="event.stopPropagation(); playSentence(${i})">▶️</button>
+            <button class="sentence-play-btn" onclick="event.stopPropagation(); playSentence(${i})" title="Play">▶️</button>
+            <button class="sentence-play-btn" onclick="downloadSentence(${i}, event)" title="Download">⬇️</button>
         </div>
     `).join('');
+}
+
+function downloadSentence(index, event) {
+    event?.stopPropagation();
+    const sentence = state.sentences[index];
+    if (!sentence) return;
+    const link = document.createElement('a');
+    link.href = sentence.audio_url;
+    link.download = sentence.filename || `bashi-chunk-${index + 1}.mp3`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 // Escape HTML
@@ -1646,7 +2292,18 @@ function updateProgress() {
 
 // Play Single Sentence
 function playSentence(index) {
-    if (index >= state.sentences.length) return;
+    if (index >= state.sentences.length) {
+        if (!state.synthesisComplete) {
+            state.waitingForNextChunk = true;
+            updateSentencePlaybackStatus();
+            return;
+        }
+        completeSentencePlayback();
+        return;
+    }
+
+    state.waitingForNextChunk = false;
+    updateSentencePlaybackStatus();
 
     // Update UI - remove previous states
     document.querySelectorAll('.sentence-item').forEach((el, i) => {
@@ -1665,9 +2322,10 @@ function playSentence(index) {
         currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // Play audio
+    // Keep native <audio> + MP3 for Windows/macOS/Linux browser parity; do not
+    // replace this path with MSE or custom WebAudio decoding.
     elements.sentenceAudio.src = state.sentences[index].audio_url;
-    elements.sentenceAudio.play();
+    elements.sentenceAudio.play().catch(() => { });
 
     state.currentSentenceIndex = index;
     updateProgress();
@@ -1677,6 +2335,9 @@ function playSentence(index) {
 function playAllSentences() {
     if (state.sentences.length === 0) return;
 
+    if (state.currentSentenceIndex >= state.sentences.length) {
+        state.currentSentenceIndex = 0;
+    }
     state.isPlaying = true;
     state.isPaused = false;
     updatePauseButton();
@@ -1690,7 +2351,11 @@ function pausePlayback() {
         state.isPaused = false;
         state.isPlaying = true;
         updatePauseButton();
-        elements.sentenceAudio.play();
+        if (state.waitingForNextChunk && state.currentSentenceIndex < state.sentences.length) {
+            playSentence(state.currentSentenceIndex);
+        } else {
+            elements.sentenceAudio.play().catch(() => { });
+        }
     } else {
         // Pause playback
         state.isPaused = true;
@@ -1726,7 +2391,9 @@ function resetPlayback() {
     state.isPlaying = false;
     state.isPaused = false;
     state.currentSentenceIndex = 0;
+    state.waitingForNextChunk = false;
     elements.sentenceAudio.pause();
+    updateSentencePlaybackStatus();
 
     // Reset UI
     document.querySelectorAll('.sentence-item').forEach(el => {
@@ -1751,19 +2418,27 @@ function onSentenceEnded() {
     state.currentSentenceIndex++;
     updateProgress();
 
-    if (state.currentSentenceIndex < state.sentences.length) {
-        // Wait for pause duration, then play next
-        setTimeout(() => {
-            if (state.isPlaying) {
-                playSentence(state.currentSentenceIndex);
-            }
-        }, state.pauseDuration * 1000);
-    } else {
-        // Finished all sentences
-        state.isPlaying = false;
-        const msg = state.currentLang === 'zh' ? '播放完成！' : 'Playback complete!';
-        showToast(msg, 'success');
-    }
+    // Wait for the configured pause, then either play the ready chunk or enter
+    // the waiting state until sentence_done supplies the awaited index.
+    setTimeout(() => {
+        if (state.isPlaying) {
+            playSentence(state.currentSentenceIndex);
+        }
+    }, state.pauseDuration * 1000);
+}
+
+function updateSentencePlaybackStatus() {
+    if (!elements.sentencePlaybackStatus) return;
+    elements.sentencePlaybackStatus.style.display = state.waitingForNextChunk ? 'inline' : 'none';
+}
+
+function completeSentencePlayback() {
+    if (!state.isPlaying && !state.waitingForNextChunk) return;
+    state.isPlaying = false;
+    state.waitingForNextChunk = false;
+    updateSentencePlaybackStatus();
+    const msg = state.currentLang === 'zh' ? '播放完成！' : 'Playback complete!';
+    showToast(msg, 'success');
 }
 
 // Update Demo Buttons based on selected language

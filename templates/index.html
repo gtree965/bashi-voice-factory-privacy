@@ -243,6 +243,16 @@
             <!-- Generate Button -->
             <div class="generate-container">
                 <div class="eta-panel" id="eta-panel" style="display: none;"></div>
+                <div class="setting-item autoplay-setting" id="autoplay-setting">
+                    <label class="toggle-row" for="autoplay-first-chunk">
+                        <input type="checkbox" id="autoplay-first-chunk" checked>
+                        <span data-en="Play streaming audio when the first chunk is ready"
+                            data-zh="首个片段生成后自动播放流式音频">Play streaming audio when the first chunk is ready</span>
+                    </label>
+                    <span class="setting-hint"
+                        data-en="Applies to long-text preview and Shadowing Mode. Turn it off to wait for complete audio or start chunks manually."
+                        data-zh="适用于长文试听和跟读模式。关闭后将等待完整音频，或由你手动播放片段。">Applies to long-text preview and Shadowing Mode. Turn it off to wait for complete audio or start chunks manually.</span>
+                </div>
                 <button id="generate-btn" class="generate-btn">
                     <span class="btn-icon">
                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -266,20 +276,36 @@
                     <div
                         style="display: flex; align-items: center; justify-content: center; gap: var(--space-md); margin-bottom: var(--space-md);">
                         <div class="spinner"></div>
-                        <span style="color: var(--text-primary); font-size: var(--font-size-base);"
+                        <span id="long-progress-headline"
+                            style="color: var(--text-primary); font-size: var(--font-size-base);"
                             data-en="Generating..." data-zh="正在生成...">Generating...</span>
+                        <button type="button" id="long-stop-btn" class="synthesis-stop-btn" style="display: none;">
+                            <span aria-hidden="true">■</span>
+                            <span data-en="Stop" data-zh="停止合成">Stop</span>
+                        </button>
                     </div>
 
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="long-progress-fill" style="width: 0%"></div>
+                    <div id="long-progress-metrics">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="long-progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div
+                            style="display: flex; justify-content: space-between; margin-top: var(--space-sm); font-size: var(--font-size-sm); color: var(--text-secondary);">
+                            <span id="long-progress-text" data-en="Generating group 1..." data-zh="正在生成第 1 组...">Generating
+                                group 1...</span>
+                            <span id="long-progress-count">0 / 0</span>
+                        </div>
                     </div>
-                    <div
-                        style="display: flex; justify-content: space-between; margin-top: var(--space-sm); font-size: var(--font-size-sm); color: var(--text-secondary);">
-                        <span id="long-progress-text" data-en="Generating chunk 1..." data-zh="正在生成第 1 组...">Generating
-                            chunk 1...</span>
-                        <span id="long-progress-count">0 / 0</span>
+                    <audio id="long-preview-audio" preload="metadata" style="display: none;"></audio>
+                    <div class="long-preview-actions">
+                        <span class="sentence-playback-status" id="long-preview-status" style="display: none;"
+                            data-en="Waiting for next chunk..." data-zh="等待下一组合成…">Waiting for next chunk...</span>
+                        <button type="button" id="long-preview-toggle" class="long-preview-toggle-btn" disabled>
+                            <span class="long-preview-toggle-icon" aria-hidden="true">🔊</span>
+                            <span class="long-preview-toggle-text" data-en="Preview" data-zh="试听">Preview</span>
+                        </button>
                     </div>
-                    <p class="progress-hint"
+                    <p class="progress-hint" id="long-progress-hint"
                         data-en="Long text processing may take minutes. Please be patient."
                         data-zh="长文本生成需要较长时间，请耐心等待。">Long text processing may take minutes. Please be patient.</p>
                 </div>
@@ -319,7 +345,15 @@
             <section class="sentence-player-section glass-panel" id="sentence-player-section" style="display: none;">
                 <div class="section-header">
                     <h2 data-en="Chunk Playback" data-zh="片段播放">Chunk Playback</h2>
-                    <span class="sentence-progress" id="sentence-progress">0 / 0</span>
+                    <div class="sentence-progress-actions">
+                        <span class="sentence-playback-status" id="sentence-playback-status" style="display: none;"
+                            data-en="Waiting for next chunk..." data-zh="等待下一句合成…">Waiting for next chunk...</span>
+                        <span class="sentence-progress" id="sentence-progress">0 / 0</span>
+                        <button type="button" id="sentence-stop-btn" class="synthesis-stop-btn" style="display: none;">
+                            <span aria-hidden="true">■</span>
+                            <span data-en="Stop" data-zh="停止合成">Stop</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Progress Bar -->

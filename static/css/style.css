@@ -895,6 +895,12 @@ textarea::placeholder {
     color: var(--text-secondary);
 }
 
+.setting-hint {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
 .slider-container {
     display: flex;
     align-items: center;
@@ -950,6 +956,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
     gap: var(--space-md);
     padding: var(--space-lg) 0;
     animation: fade-in-up 0.6s ease-out 0.4s both;
+}
+
+.autoplay-setting {
+    width: min(100%, 620px);
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.12);
 }
 
 .eta-panel {
@@ -1028,6 +1042,28 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .loading-indicator.active {
     display: flex;
+}
+
+.synthesis-stop-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid rgba(245, 87, 108, 0.5);
+    border-radius: var(--radius-full);
+    background: rgba(245, 87, 108, 0.12);
+    color: #ff9aaa;
+    font-family: var(--font-primary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.synthesis-stop-btn:hover {
+    border-color: rgba(245, 87, 108, 0.85);
+    background: rgba(245, 87, 108, 0.2);
+    color: #ffd5dc;
 }
 
 .spinner {
@@ -1442,6 +1478,55 @@ audio::-webkit-media-controls-panel {
 .sentence-progress {
     font-size: var(--font-size-sm);
     color: var(--text-muted);
+}
+
+.sentence-progress-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+}
+
+.sentence-playback-status {
+    color: var(--accent-warm);
+    font-size: var(--font-size-sm);
+}
+
+.long-preview-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    min-height: 34px;
+    margin-top: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+.long-preview-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid rgba(212, 163, 115, 0.55);
+    border-radius: var(--radius-full);
+    background: rgba(212, 163, 115, 0.12);
+    color: var(--text-primary);
+    font-family: var(--font-primary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.long-preview-toggle-btn:hover:not(:disabled) {
+    border-color: var(--accent-warm);
+    background: rgba(212, 163, 115, 0.22);
+}
+
+.long-preview-toggle-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 /* Progress Bar */

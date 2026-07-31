@@ -10,7 +10,7 @@
 | **v0.1.0** | Windows initial release | Released 2026-05 | shipped |
 | **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Released 2026-06 | shipped |
 | **v0.1.2** | NVIDIA detection and backend robustness (Windows) | Released 2026-06-15 | shipped |
-| **v0.1.3** | STT quality/safety patch: SenseVoice default + disabled Speaker ID UI | Released 2026-07-22 | shipped |
+| **v0.1.3** | Windows reliability, logging, streaming UX, and STT quality/safety | Released 2026-07-28 | shipped |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -153,9 +153,9 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 
 ---
 
-## v0.1.3 — STT quality/safety patch (Windows patch, shipped 2026-07-22)
+## v0.1.3 — Reliability, streaming UX, and STT quality/safety (Windows patch, shipped 2026-07-28)
 
-**Goal**: improve Chinese STT quality without losing the fast local workflow, and remove UI paths that imply unsupported accuracy.
+**Goal**: finish the Windows release with reliable first-launch dependency handling, actionable logs, responsive streaming controls, and safer STT defaults.
 
 ### Shipped scope
 
@@ -172,6 +172,11 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 - Enforce a transport-level STT upload-size ceiling (2 GB by default) and tighten audio-conversion filename validation.
 - Guard shared `stt_jobs` state with a lock so background transcription, SSE polling, result reads, and cleanup cannot race each other.
 - Buffer SSE data across `ReadableStream` chunks in the affected frontend loops so split JSON lines/frames are not dropped or misparsed.
+- Harden the portable launcher dependency gate so healthy installs skip pip work, missing packages trigger a neutral first-install message, and mirror package gaps fall back to upstream PyPI instead of being mislabeled as unstable networking.
+- Add rotating `app.log` application logging while keeping launcher/native stderr in `launch_log.txt`, with safe degradation if the application log cannot be opened.
+- Correct the vendored llama.cpp/ggml log-level mapping: runtime summaries remain INFO, trace chatter is DEBUG, real warnings stay WARNING, and true errors are no longer downgraded.
+- Finish streaming synthesis UX: Stop controls cancel long/chunked streams without discarding completed chunks, the first chunk auto-plays by default with a persistent opt-out, and continuous playback waits for newly generated chunks instead of ending early.
+- Stream GGUF long-form preview audio group by group while synthesis continues, with mute and adaptive slow-machine rebuffering; keep the final merged MP3 seekable and downloadable without interrupting active preview playback.
 
 ### Backlog, not release scope
 
@@ -335,4 +340,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-07-22 (v0.1.3 STT quality/safety patch shipped). Next review: before v0.1.4 STT correction expansion or v0.2 cross-platform work.*
+*Last updated: 2026-07-28 (v0.1.3 reliability, streaming UX, and STT quality/safety patch shipped). Next review: before v0.1.4 STT correction expansion or v0.2 cross-platform work.*

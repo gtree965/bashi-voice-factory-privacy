@@ -56,8 +56,8 @@ desktop.ini
 roadmap_review_report_by_*.md
 *.srt
 
-# Tests stay local-only until fixtures are ready for public CI.
-tests/
+# Local test experiment output (not regression fixtures).
+tests/.tmp/
 
 # Generated audio, except product UI style previews.
 static/audio/*
@@ -75,4 +75,3 @@ models/
 *.pt
 *.pth
 *.bin
-

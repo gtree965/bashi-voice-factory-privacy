@@ -5,6 +5,7 @@ import queue
 import re
 import sys
 import threading
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -350,8 +351,7 @@ class LocalTTSService(LocalTTSServiceBase):
     def synthesize_long_stream(
         self, text: str, voice_id: str | None, instruct: str = ""
     ) -> Iterator[dict]:
-        text = normalize_chinese_text(text)
-        chunks = self._coalesce_long_chunks(self._split_long_text(text))
+        chunks = self._long_groups(text)
         if not chunks:
             def _empty() -> Iterator[dict]:
                 yield {"status": "error", "error": "No text chunks were produced"}
@@ -375,6 +375,13 @@ class LocalTTSService(LocalTTSServiceBase):
             raise
 
         return self._iter_from_queue(event_queue, cancel_event)
+
+    def count_long_groups(self, text: str) -> int:
+        return len(self._long_groups(text))
+
+    def _long_groups(self, text: str) -> list[str]:
+        normalized = normalize_chinese_text(text)
+        return self._coalesce_long_chunks(self._split_long_text(normalized))
 
     def _split_long_text(self, text: str) -> list[str]:
         # Reuse the route-layer splitter for now so GGUF long mode and
@@ -552,6 +559,22 @@ class LocalTTSService(LocalTTSServiceBase):
         audio_chunks: list[np.ndarray] = []
         sample_rate = SAMPLE_RATE
         try:
+            debug_sleep = max(
+                0.0,
+                float(os.environ.get("BASHI_LONG_CHUNK_DEBUG_SLEEP", "0")),
+            )
+        except (TypeError, ValueError):
+            logger.warning(
+                "Ignoring invalid BASHI_LONG_CHUNK_DEBUG_SLEEP value: %r",
+                os.environ.get("BASHI_LONG_CHUNK_DEBUG_SLEEP"),
+            )
+            debug_sleep = 0.0
+        if debug_sleep:
+            logger.info(
+                "Long chunk debug sleep enabled: %.3fs per group",
+                debug_sleep,
+            )
+        try:
             for index, chunk_text in enumerate(chunks):
                 if cancel_event.is_set():
                     return
@@ -581,6 +604,10 @@ class LocalTTSService(LocalTTSServiceBase):
                     audio_chunks.append(self._long_join_gap(sample_rate, audio_chunk))
                 if cancel_event.is_set():
                     return
+                if debug_sleep:
+                    time.sleep(debug_sleep)
+                if cancel_event.is_set():
+                    return
 
                 completed = index + 1
                 event_queue.put(
@@ -592,6 +619,38 @@ class LocalTTSService(LocalTTSServiceBase):
                         "percent": int((completed / total) * 100),
                     }
                 )
+
+                if cancel_event.is_set():
+                    return
+                try:
+                    # Preserve relative loudness between preview groups. The final
+                    # file applies one global gain after concatenation, so per-group
+                    # peak normalization would sound inconsistent with that result.
+                    preview_name = write_mp3(
+                        audio_chunk,
+                        sample_rate,
+                        uuid.uuid4().hex,
+                        OUTPUT_DIR,
+                        normalize_peak=False,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Long preview MP3 encoding failed for chunk %s/%s",
+                        completed,
+                        total,
+                        exc_info=True,
+                    )
+                else:
+                    event_queue.put(
+                        {
+                            "status": "chunk_done",
+                            "chunk": completed,
+                            "total": total,
+                            "audio_url": f"/static/audio/{preview_name}",
+                            "filename": preview_name,
+                            "duration": len(audio_chunk) / sample_rate,
+                        }
+                    )
 
             if cancel_event.is_set():
                 return
