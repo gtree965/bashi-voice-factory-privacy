@@ -10,7 +10,7 @@
 | **v0.1.0** | Windows initial release | Released 2026-05 | shipped |
 | **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Released 2026-06 | shipped |
 | **v0.1.2** | NVIDIA detection and backend robustness (Windows) | Released 2026-06-15 | shipped |
-| **v0.1.3** | Windows reliability, logging, streaming UX, and STT quality/safety | Released 2026-07-28 | shipped |
+| **v0.1.3** | Windows reliability, logging, streaming UX, and STT quality/safety | Released 2026-08-03 | shipped |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -153,7 +153,7 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 
 ---
 
-## v0.1.3 — Reliability, streaming UX, and STT quality/safety (Windows patch, shipped 2026-07-28)
+## v0.1.3 — Reliability, streaming UX, and STT quality/safety (Windows patch, shipped 2026-08-03)
 
 **Goal**: finish the Windows release with reliable first-launch dependency handling, actionable logs, responsive streaming controls, and safer STT defaults.
 
@@ -340,4 +340,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-07-28 (v0.1.3 reliability, streaming UX, and STT quality/safety patch shipped). Next review: before v0.1.4 STT correction expansion or v0.2 cross-platform work.*
+*Last updated: 2026-08-03 (v0.1.3 reliability, streaming UX, and STT quality/safety patch shipped). Next review: before v0.1.4 STT correction expansion or v0.2 cross-platform work.*
