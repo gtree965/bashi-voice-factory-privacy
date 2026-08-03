@@ -148,8 +148,9 @@ class LocalTTSService(LocalTTSServiceBase):
 
             self._state = "loading"
             try:
-                if str(GGUF_DIR) not in sys.path:
-                    sys.path.insert(0, str(GGUF_DIR))
+                gguf_dir = str(GGUF_DIR)
+                sys.path[:] = [entry for entry in sys.path if entry != gguf_dir]
+                sys.path.insert(0, gguf_dir)
 
                 try:
                     import onnxruntime as ort  # noqa: WPS433
@@ -162,6 +163,25 @@ class LocalTTSService(LocalTTSServiceBase):
                     ) from exc
 
                 from qwen3_tts_gguf.inference import TTSEngine  # noqa: WPS433
+
+                runtime_module = sys.modules.get("qwen3_tts_gguf")
+                runtime_file = getattr(runtime_module, "__file__", None)
+                try:
+                    Path(runtime_file or "").resolve().relative_to(GGUF_DIR)
+                except (OSError, ValueError):
+                    actual_source = str(runtime_file or "<unknown>")
+                    actual_source = actual_source.encode(
+                        "ascii", errors="backslashreplace"
+                    ).decode("ascii")
+                    expected_source = str(GGUF_DIR).encode(
+                        "ascii", errors="backslashreplace"
+                    ).decode("ascii")
+                    logger.error(
+                        "[GGUF] Runtime source mismatch: qwen3_tts_gguf was loaded "
+                        "from %s; expected a runtime under %s",
+                        actual_source,
+                        expected_source,
+                    )
 
                 _patch_decoder_ready_timeout(GGUF_DECODER_READY_TIMEOUT)
                 provider = self._onnx_provider_override or GGUF_ONNX_PROVIDER

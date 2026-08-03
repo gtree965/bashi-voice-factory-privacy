@@ -38,6 +38,7 @@ const state = {
     synthesisComplete: true,
     synthesisStopped: false,
     retryAfterStop: false,
+    runToken: 0,
     waitingForNextChunk: false,
     autoPlayFirstChunk: true,
     // Long-form preview playback is intentionally isolated from sentence mode.
@@ -1417,6 +1418,9 @@ async function generateSpeech() {
         return;
     }
 
+    // Only the newest accepted synthesis run may update shared UI/playback state.
+    // Older SSE streams can remain alive while a replacement request retries 409.
+    const runToken = ++state.runToken;
     stopLongPreview();
 
     // Get settings
@@ -1454,17 +1458,18 @@ async function generateSpeech() {
 
     try {
         if (sentenceMode) {
-            await generateSentences(text, instruct, controller.signal, retryAfterStop);
+            await generateSentences(text, instruct, controller.signal, retryAfterStop, runToken);
         } else {
             if (longMode) {
                 // Hide generic spinner since long audio has its own detailed progress bar
                 elements.loading.classList.remove('active');
-                await generateLongAudio(text, instruct, controller.signal, retryAfterStop);
+                await generateLongAudio(text, instruct, controller.signal, retryAfterStop, runToken);
             } else {
-                await generateSingleAudio(text, instruct, retryAfterStop);
+                await generateSingleAudio(text, instruct, retryAfterStop, runToken);
             }
         }
     } catch (error) {
+        if (runToken !== state.runToken) return;
         if (error.name === 'AbortError') {
             clearLongProgressAnim();
             clearSentenceProgressAnim();
@@ -1493,16 +1498,18 @@ async function generateSpeech() {
         const msg = state.currentLang === 'zh' ? '生成失败，请重试' : 'Generation failed, please try again';
         showToast(msg, 'error');
     } finally {
-        clearLongProgressAnim();
-        clearSentenceProgressAnim();
-        // Hide loading state
-        elements.generateBtn.style.display = 'flex';
-        elements.loading.classList.remove('active');
-        setSynthesisStopMode(null);
+        if (runToken === state.runToken) {
+            clearLongProgressAnim();
+            clearSentenceProgressAnim();
+            // Hide loading state
+            elements.generateBtn.style.display = 'flex';
+            elements.loading.classList.remove('active');
+            setSynthesisStopMode(null);
+        }
         if (state.synthesisAbort === controller) {
             state.synthesisAbort = null;
         }
-        if (longMode) {
+        if (longMode && runToken === state.runToken) {
             state.synthesisComplete = true;
         }
     }
@@ -1525,9 +1532,14 @@ function stopSynthesis() {
     state.synthesisAbort.abort();
 }
 
-function showRestartRetryStatus(groupFinishDeadline = null) {
-    let en = 'Stopping previous synthesis...';
-    let zh = '正在停止上一次合成…';
+function showRestartRetryStatus(groupFinishDeadline = null, retryAfterStop = false, runToken = state.runToken) {
+    if (runToken !== state.runToken) return;
+    let en = retryAfterStop
+        ? 'Stopping previous synthesis...'
+        : 'Waiting for the current synthesis to finish...';
+    let zh = retryAfterStop
+        ? '正在停止上一次合成…'
+        : '上一次合成仍在进行，正在等待…';
     if (Number.isFinite(groupFinishDeadline)) {
         const remainingSeconds = Math.ceil((groupFinishDeadline - Date.now()) / 1000);
         if (remainingSeconds > 0) {
@@ -1550,7 +1562,8 @@ function showRestartRetryStatus(groupFinishDeadline = null) {
     });
 }
 
-function clearRestartRetryStatus() {
+function clearRestartRetryStatus(runToken = state.runToken) {
+    if (runToken !== state.runToken) return;
     const initialStatuses = [
         [elements.loading?.querySelector('span'), 'Generating...', '正在生成...'],
         [document.getElementById('long-progress-text'), 'Initializing...', '初始化...']
@@ -1581,7 +1594,11 @@ function waitForRetryDelay(delayMs, signal) {
     });
 }
 
-async function postSynthesisWithRetry(url, payload, { signal, retryAfterStop = false } = {}) {
+async function postSynthesisWithRetry(
+    url,
+    payload,
+    { signal, retryAfterStop = false, runToken = state.runToken } = {}
+) {
     const deadline = Date.now() + RESTART_RETRY_BUDGET_MS;
     let retryIndex = 0;
     let groupFinishDeadline = null;
@@ -1593,9 +1610,13 @@ async function postSynthesisWithRetry(url, payload, { signal, retryAfterStop = f
             signal,
             body: JSON.stringify(payload)
         });
-        if (response.status !== 409 || !retryAfterStop) {
+        // A newer run may have started while fetch was in flight. Return the
+        // response to its caller so any live SSE body is still drained there,
+        // but never let an obsolete retry loop keep competing for the engine.
+        if (runToken !== state.runToken) return response;
+        if (response.status !== 409) {
             if (response.ok) {
-                clearRestartRetryStatus();
+                clearRestartRetryStatus(runToken);
             }
             return response;
         }
@@ -1607,13 +1628,14 @@ async function postSynthesisWithRetry(url, payload, { signal, retryAfterStop = f
 
         if (
             retryIndex === 0
+            && retryAfterStop
             && url === '/api/synthesize-long'
             && Number.isFinite(state.lastGroupSeconds)
             && state.lastGroupSeconds > 0
         ) {
             groupFinishDeadline = Date.now() + state.lastGroupSeconds * 1000;
         }
-        showRestartRetryStatus(groupFinishDeadline);
+        showRestartRetryStatus(groupFinishDeadline, retryAfterStop, runToken);
         const backoffMs = Math.min(
             RESTART_RETRY_BASE_DELAY_MS * (2 ** retryIndex),
             RESTART_RETRY_MAX_DELAY_MS,
@@ -1628,7 +1650,7 @@ async function postSynthesisWithRetry(url, payload, { signal, retryAfterStop = f
 }
 
 // Generate Single Audio
-async function generateSingleAudio(text, instruct, retryAfterStop = false) {
+async function generateSingleAudio(text, instruct, retryAfterStop = false, runToken = state.runToken) {
     const response = await postSynthesisWithRetry(
         '/api/synthesize',
         {
@@ -1636,10 +1658,11 @@ async function generateSingleAudio(text, instruct, retryAfterStop = false) {
             voice: state.selectedVoice,
             instruct: instruct
         },
-        { retryAfterStop }
+        { retryAfterStop, runToken }
     );
 
     const result = await response.json();
+    if (runToken !== state.runToken) return;
 
     if (result.success) {
         state.currentAudioUrl = result.audio_url;
@@ -1888,7 +1911,8 @@ function toggleLongPreview() {
     updateLongPreviewToggle();
 }
 
-function handleLongPreviewChunk(data) {
+function handleLongPreviewChunk(data, runToken) {
+    if (runToken !== state.runToken) return;
     if (!data.audio_url) return;
     state.longTotal = Number(data.total) || state.longTotal;
     state.longChunks.push({
@@ -1919,7 +1943,7 @@ function handleLongPreviewChunk(data) {
 }
 
 // Generate Long Audio via SSE
-async function generateLongAudio(text, instruct, signal, retryAfterStop = false) {
+async function generateLongAudio(text, instruct, signal, retryAfterStop = false, runToken = state.runToken) {
     const progressDiv = document.getElementById('long-text-progress');
     const fill = document.getElementById('long-progress-fill');
     const textEl = document.getElementById('long-progress-text');
@@ -1950,10 +1974,11 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
                 voice: state.selectedVoice,
                 instruct: instruct
             },
-            { signal, retryAfterStop }
+            { signal, retryAfterStop, runToken }
         );
 
         if (!response.ok) {
+            if (runToken !== state.runToken) return;
             clearLongProgressAnim();
             progressDiv.style.display = 'none';
             setLongProgressPlayoutMode(null);
@@ -1986,6 +2011,7 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
                     const data = JSON.parse(dataStr);
 
                     if (data.status === 'generating') {
+                        if (runToken !== state.runToken) continue;
                         state.longTotal = Number(data.total) || state.longTotal;
                         const percent = ((data.chunk - 1) / data.total) * 100;
                         fill.style.width = `${percent}%`;
@@ -1996,9 +2022,10 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
                         textEl.textContent = state.currentLang === 'zh' ? `正在生成第 ${data.chunk} 组...` : `Generating group ${data.chunk}...`;
                     }
                     else if (data.status === 'chunk_done') {
-                        handleLongPreviewChunk(data);
+                        handleLongPreviewChunk(data, runToken);
                     }
                     else if (data.status === 'merging') {
+                        if (runToken !== state.runToken) continue;
                         clearLongProgressAnim();
                         fill.style.width = '95%';
                         textEl.setAttribute('data-en', 'Merging audio files...');
@@ -2006,6 +2033,7 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
                         textEl.textContent = state.currentLang === 'zh' ? '正在合并音频文件...' : 'Merging audio files...';
                     }
                     else if (data.status === 'done') {
+                        if (runToken !== state.runToken) continue;
                         clearLongProgressAnim();
                         fill.style.width = '100%';
                         state.currentAudioUrl = data.audio_url_mp3;
@@ -2059,6 +2087,7 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
                         return;
                     }
                     else if (data.status === 'error') {
+                        if (runToken !== state.runToken) continue;
                         clearLongProgressAnim();
                         throw new Error(data.error);
                     }
@@ -2066,6 +2095,7 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
             }
         }
     } catch (error) {
+        if (runToken !== state.runToken) return;
         if (error.name === 'AbortError') {
             if (state.longPreviewPlaying) {
                 setLongProgressPlayoutMode('stopped');
@@ -2090,7 +2120,9 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
         showToast(msg, 'error');
         throw error; // Let main logic catch it
     } finally {
-        clearLongProgressAnim();
+        if (runToken === state.runToken) {
+            clearLongProgressAnim();
+        }
     }
 }
 
@@ -2098,7 +2130,7 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false)
 // Route streams one `generating` event then one `sentence_done` event per chunk,
 // followed by `done` (or `error`). We consume with fetch+ReadableStream because
 // EventSource is GET-only and can't send a JSON body.
-async function generateSentences(text, instruct, signal, retryAfterStop = false) {
+async function generateSentences(text, instruct, signal, retryAfterStop = false, runToken = state.runToken) {
     setProgressAnim(elements.progressFill, true);
 
     // Fresh run: reset state before opening the stream so Stop is available
@@ -2126,10 +2158,11 @@ async function generateSentences(text, instruct, signal, retryAfterStop = false)
             max_words: state.maxWords,
             newline_hard: state.newlineHard
         },
-        { signal, retryAfterStop }
+        { signal, retryAfterStop, runToken }
     );
 
     if (!response.ok) {
+        if (runToken !== state.runToken) return;
         clearSentenceProgressAnim();
         state.synthesisComplete = true;
         let errBody = {};
@@ -2162,16 +2195,18 @@ async function generateSentences(text, instruct, signal, retryAfterStop = false)
                 } catch (_) {
                     continue;  // skip malformed frame
                 }
-                if (handleSentenceEvent(event)) {
+                if (handleSentenceEvent(event, runToken)) {
                     streamDone = true;
                     break;
                 }
             }
         }
     } finally {
-        clearSentenceProgressAnim();
+        if (runToken === state.runToken) {
+            clearSentenceProgressAnim();
+        }
     }
-    if (!state.synthesisComplete) {
+    if (runToken === state.runToken && !state.synthesisComplete) {
         finishSentenceSynthesis(false);
     }
 }
@@ -2186,7 +2221,8 @@ function finishSentenceSynthesis(stopped = false) {
 
 // Handle one SSE frame from /api/synthesize-sentences. Returns true to stop reading.
 // On `error` we keep already-generated sentences playable and just halt the stream.
-function handleSentenceEvent(event) {
+function handleSentenceEvent(event, runToken = state.runToken) {
+    if (runToken !== state.runToken) return false;
     if (typeof event.total === 'number' && event.total > 0) {
         state.sentenceTotal = event.total;
     }

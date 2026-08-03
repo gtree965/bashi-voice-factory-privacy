@@ -55,7 +55,7 @@
 ### 🛡️ 智能首次下载，断点续传
 - **HTTP Range / resume 内置** — 一次 WiFi 闪断不会让 2.2 GB 的 GGUF 下载从零开始。
 - **3 次重试，指数退避** — pip 依赖与模型文件都有同样的兜底逻辑。
-- **国内友好镜像**：自动识别中国时区使用阿里云 PyPI；GGUF 运行模型走 ModelScope；STT 模型走 hf-mirror.cn。
+- **国内友好镜像**：pip 按阿里云 → 清华 → PyPI 依次回退，某个镜像不可达或拒绝本机 IP 时自动换源；GGUF 运行模型走 ModelScope；STT 模型走 hf-mirror.cn。
 
 ### 📱 局域网共享，手机平板可访问
 - 首次启动询问是否绑定 `0.0.0.0`，允许同一 WiFi 下其他设备访问。
@@ -87,7 +87,7 @@
 
 **仅首次启动**（一次性，约 700 MB + 约 2.2 GB）：
 
-- pip 依赖来自 `https://mirrors.aliyun.com/pypi/simple/`（海外用户默认 PyPI）
+- pip 依赖来自 `https://mirrors.aliyun.com/pypi/simple/`，失败时依次回退清华、PyPI（海外用户仅用 PyPI）
 - GGUF 模型来自 `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime`
 - STT 模型（用户主动点击下载）来自 `https://hf-mirror.com/csukuangfj/...`（备用 HuggingFace）
 
@@ -155,6 +155,7 @@
 | 双击 `Start_启动.bat` 报 "Array index expression is missing" | 旧版 zip。请从 GitHub Releases 或 files.fm 镜像重新下载最新版；该 BOM 问题在 v0.1.0 正式版已修复 |
 | pip 安装途中 WiFi 闪断后中止 | 自动重试 3 次（5/30/120 秒退避）。3 次都失败时，修好网络后重新运行启动器即可（pip 会跳过已装好的包） |
 | pip 安装失败并提示 "long path support" | 按启动器提示，在管理员 PowerShell 中运行一次注册表命令，然后重新启动 |
+| 所有镜像都装不上，或镜像拒绝本机 IP（`403` / `denied by IP ACL`） | 启动器已按阿里云 → 清华 → PyPI 自动换源。若要指定某一个源，启动前设置 `BASHI_PIP_INDEX_URL`，例如 `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
 | GGUF 下载中断 | 同样自动重试，且支持 HTTP Range 续传，重新运行启动器从 `.part` 文件续传 |
 | 启动报 "No usable backend was found" | 查 `app.log`（带时间戳的结构化应用日志）和 `launch_log.txt`（启动器步骤与原生 stderr）。常见原因：GGUF 运行 DLL 缺失、显卡驱动过旧、可用内存 <8 GB。程序会打印中英双语提示告知具体原因 |
 | STT 下载闪过 "镜像失败" | v0.1.0 正式版不会出现 — 是旧版残留的 ModelScope 路径，已删除 |
@@ -178,7 +179,6 @@ bashi-voice-factory-privacy-v0.1.3/
 │                                                         ← 中英双语帮助 PDF
 ├── bashi-privacy-app/                                   ← 程序代码 + 嵌入式 Python
 │   ├── run_portable.bat                                 ← 等效启动器（直接路径）
-│   ├── README.md                                        ← 项目说明副本
 │   └── ...
 └── vulkan_backend_spike/                                ← GGUF 运行时（首次启动自动填充）
     └── Qwen3-TTS-GGUF/

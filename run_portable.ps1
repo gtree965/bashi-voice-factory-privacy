@@ -48,17 +48,23 @@ Set-Location $AppRoot
 
 $existingAppUrl = "http://127.0.0.1:$Port"
 if (Test-LocalPortListening -TargetPort $Port) {
-    Write-Host "[INFO] Port $Port is already in use. Another copy of this app is very likely running."
-    Write-Host "[INFO] 端口 $Port 已被占用，很可能已有本应用的另一个副本正在运行。"
-    Write-Host "[INFO] Opening the existing address: $existingAppUrl"
-    Write-Host "[INFO] 正在打开已有地址：$existingAppUrl"
+    $earlyExitTimestamp = (Get-Date).ToString(
+        "yyyy-MM-dd HH:mm:ss",
+        [Globalization.CultureInfo]::InvariantCulture
+    )
+    $earlyExitLogLine = '[{0}] [INFO] Port {1} already in use; existing instance detected, launcher exited early.' -f $earlyExitTimestamp, $Port
     try {
-        Start-Process $existingAppUrl
+        $earlyExitLogLine | Add-Content -Path $LogFile -Encoding utf8 -ErrorAction Stop
     }
     catch {
-        Write-Host "[WARN] Could not open the browser automatically. Please open: $existingAppUrl"
-        Write-Host "[WARN] 无法自动打开浏览器，请手动访问：$existingAppUrl"
+        Write-Host "[WARN] Could not append the early-exit event to launch_log.txt because the file is busy."
+        Write-Host "[WARN] launch_log.txt 正在使用中，无法追加本次提前退出记录。"
     }
+    Write-Host "[INFO] Port $Port is already in use. Another copy of this app is very likely running."
+    Write-Host "[INFO] 端口 $Port 已被占用，很可能已有本应用的另一个副本正在运行。"
+    Write-Host "[INFO] Existing address: $existingAppUrl"
+    Write-Host "[INFO] 已有实例地址：$existingAppUrl"
+    Read-Host "Press Enter to exit / 按回车退出"
     exit 0
 }
 
@@ -180,27 +186,41 @@ function Read-LanBindHost {
     return $selectedHost
 }
 
-function Add-PthEntry {
-    param(
-        [Parameter(Mandatory = $true)][string]$Entry
+function Set-PortablePthEntries {
+    $portableAppEntry = ".."
+    $portableGgufEntry = "..\..\vulkan_backend_spike\Qwen3-TTS-GGUF"
+    $sourceLines = @(
+        (Get-Content -LiteralPath $PthFile) -replace '^#import site$', 'import site'
     )
-    $resolved = [System.IO.Path]::GetFullPath($Entry)
-    $lines = @(Get-Content -LiteralPath $PthFile)
-    if ($lines -contains $resolved) {
-        return
+    $cleanLines = New-Object System.Collections.Generic.List[string]
+
+    foreach ($line in $sourceLines) {
+        $trimmed = $line.Trim()
+        $isComment = $trimmed.StartsWith("#")
+        $isManagedEntry = (
+            $trimmed -eq $portableAppEntry -or
+            $trimmed -eq $portableGgufEntry -or
+            $trimmed -match '^[A-Za-z]:\\' -or
+            $trimmed -match '^\\\\' -or
+            $trimmed -match '(?i)bashi-privacy-app|Qwen3-TTS-GGUF'
+        )
+        if (-not $isComment -and $isManagedEntry) {
+            continue
+        }
+        [void]$cleanLines.Add($line)
     }
 
-    $importIndex = [Array]::IndexOf($lines, "import site")
+    $importIndex = $cleanLines.IndexOf("import site")
     if ($importIndex -lt 0) {
-        $lines += $resolved
-    }
-    elseif ($importIndex -eq 0) {
-        $lines = @($resolved) + $lines
+        [void]$cleanLines.Add($portableAppEntry)
+        [void]$cleanLines.Add($portableGgufEntry)
     }
     else {
-        $lines = @($lines[0..($importIndex - 1)] + $resolved + $lines[$importIndex..($lines.Count - 1)])
+        $cleanLines.Insert($importIndex, $portableAppEntry)
+        $cleanLines.Insert($importIndex + 1, $portableGgufEntry)
     }
-    Set-Content -LiteralPath $PthFile -Encoding ascii -Value $lines
+
+    Set-Content -LiteralPath $PthFile -Encoding ascii -Value @($cleanLines)
 }
 
 function Configure-EmbeddedPython {
@@ -220,11 +240,7 @@ function Configure-EmbeddedPython {
         exit 1
     }
 
-    (Get-Content -LiteralPath $PthFile) -replace '^#import site', 'import site' |
-        Set-Content -LiteralPath $PthFile -Encoding ascii
-
-    Add-PthEntry -Entry $AppRoot
-    Add-PthEntry -Entry (Join-Path $PackageRoot "vulkan_backend_spike\Qwen3-TTS-GGUF")
+    Set-PortablePthEntries
 }
 
 function Assert-WindowsLongPathSupport {

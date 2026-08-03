@@ -159,9 +159,118 @@ class PortableDependencyInstallTests(unittest.TestCase):
         self.assertLess(precheck_start, app_start)
         self.assertIn("Test-LocalPortListening -TargetPort $Port", precheck)
         self.assertIn('"http://127.0.0.1:$Port"', precheck)
-        self.assertIn("Start-Process $existingAppUrl", precheck)
+        self.assertNotIn("Start-Process", launcher)
+        self.assertIn("Add-Content -Path $LogFile", precheck)
+        self.assertIn("launcher exited early", precheck)
+        self.assertIn("[Globalization.CultureInfo]::InvariantCulture", precheck)
+        early_log_line = next(
+            line for line in precheck.splitlines() if "$earlyExitLogLine =" in line
+        )
+        self.assertTrue(early_log_line.isascii())
+        self.assertIn('Read-Host "Press Enter to exit / 按回车退出"', precheck)
         self.assertIn("exit 0", precheck)
         self.assertNotIn("5050", precheck)
+
+    def test_launcher_rebuilds_portable_pth_entries_without_absolute_paths(self) -> None:
+        launcher = (APP_ROOT / "run_portable.ps1").read_text(encoding="utf-8")
+        function_start = launcher.index("function Set-PortablePthEntries")
+        function_end = launcher.index("function Configure-EmbeddedPython", function_start)
+        pth_rewrite = launcher[function_start:function_end]
+
+        self.assertNotIn("GetFullPath", pth_rewrite)
+        self.assertIn("'^[A-Za-z]:\\\\'", pth_rewrite)
+        self.assertIn("'^\\\\\\\\'", pth_rewrite)
+        self.assertIn('".."', pth_rewrite)
+        self.assertIn(
+            '"..\\..\\vulkan_backend_spike\\Qwen3-TTS-GGUF"',
+            pth_rewrite,
+        )
+        self.assertIn("bashi-privacy-app|Qwen3-TTS-GGUF", pth_rewrite)
+        self.assertIn("Set-PortablePthEntries", launcher)
+
+    def test_launcher_exit_prompt_keeps_read_host_without_batch_confirmation(self) -> None:
+        launcher = (APP_ROOT / "run_portable.ps1").read_text(encoding="utf-8")
+        finalizer_start = launcher.index("finally {", launcher.index("$exitCode = -1"))
+        finalizer = launcher[finalizer_start:]
+
+        self.assertIn('Read-Host "Press Enter to exit / 按回车退出"', finalizer)
+        self.assertNotIn("Terminate batch job", finalizer)
+
+    def test_batch_launcher_hands_off_to_a_separate_powershell_console(self) -> None:
+        launcher = (APP_ROOT / "run_portable.bat").read_text(encoding="ascii")
+
+        self.assertNotRegex(launcher, r"[^\x00-\x7F]")
+        self.assertIn('start "Bashi Voice Factory" powershell.exe', launcher)
+        self.assertNotIn('start ""', launcher)
+        self.assertIn('-File "%SCRIPT_DIR%run_portable.ps1" %*', launcher)
+        self.assertIn("if errorlevel 1 (", launcher)
+        self.assertEqual(1, launcher.splitlines().count("    pause"))
+        self.assertIn("Could not start PowerShell", launcher)
+        self.assertIn("pre-UTF-8 launcher ASCII-only", launcher)
+        self.assertIn("not a child that starts and immediately exits", launcher)
+        self.assertIn("exit /b 0", launcher)
+        self.assertNotIn("< nul", launcher)
+
+    def test_gguf_runtime_path_is_promoted_and_source_checked(self) -> None:
+        engine = (APP_ROOT / "local_tts_engine_gguf.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("if str(GGUF_DIR) not in sys.path", engine)
+        self.assertIn("sys.path.insert(0, gguf_dir)", engine)
+        self.assertIn('sys.modules.get("qwen3_tts_gguf")', engine)
+        self.assertIn('getattr(runtime_module, "__file__", None)', engine)
+        self.assertIn("Runtime source mismatch", engine)
+
+    def test_build_rejects_polluted_staged_python_pth(self) -> None:
+        build = (APP_ROOT / "scripts" / "build_portable_zip.ps1").read_text(
+            encoding="utf-8"
+        )
+        gate_start = build.index("function Assert-PortablePthClean")
+        gate_end = build.index("function Stage-Package", gate_start)
+        gate = build[gate_start:gate_end]
+
+        self.assertIn("python312._pth", gate)
+        self.assertIn("'^[A-Za-z]:\\\\'", gate)
+        self.assertIn("'^\\\\\\\\'", gate)
+        self.assertIn("'(?i)dist'", gate)
+        self.assertIn("$forbiddenEntries -join", gate)
+        self.assertIn("Assert-PortablePthClean -AppDest $appDest", build)
+
+    def test_build_ships_the_bilingual_readmes_only_at_the_package_root(self) -> None:
+        build = (APP_ROOT / "scripts" / "build_portable_zip.ps1").read_text(
+            encoding="utf-8"
+        )
+        docs_start = build.index('foreach ($name in @("README.md", "README_CN.md"))')
+        docs_end = build.index('foreach ($name in @("LICENSE", "VERSION"))', docs_start)
+        docs_block = build[docs_start:docs_end]
+
+        self.assertIn("Join-Path $StageRoot $name", docs_block)
+        # The cross-link line at the top of each README only resolves when both
+        # files sit side by side, so a second copy inside bashi-privacy-app/ was
+        # duplication with a broken switcher. It must not come back.
+        self.assertNotIn("Join-Path $appDest $name", docs_block)
+
+        app_files_start = build.index("$appFiles = @(")
+        app_files = build[app_files_start:build.index(")", app_files_start)]
+        self.assertNotIn('"README.md"', app_files)
+        # VERSION is read at runtime by tts_routes._read_app_version(); dropping
+        # it as "another duplicate" would silently blank the reported version.
+        self.assertIn('"VERSION"', app_files)
+
+    def test_repository_python_pth_files_have_no_absolute_or_dist_entries(self) -> None:
+        pth_files = [
+            path
+            for path in APP_ROOT.rglob("python312._pth")
+            if ".tmp" not in path.parts and ".venv" not in path.parts
+        ]
+
+        for path in pth_files:
+            with self.subTest(path=path):
+                for line in path.read_text(encoding="ascii").splitlines():
+                    if line.lstrip().startswith("#"):
+                        continue
+                    self.assertNotRegex(line, r"^[A-Za-z]:\\")
+                    self.assertNotRegex(line, r"^\\\\")
+                    self.assertNotRegex(line, r"(?i)dist")
 
     def test_embed_precheck_has_independent_dml_provider_gate(self) -> None:
         precheck = (APP_ROOT / "scripts" / "precheck_py312_embed.ps1").read_text(

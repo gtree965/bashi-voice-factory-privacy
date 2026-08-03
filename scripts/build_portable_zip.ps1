@@ -203,6 +203,27 @@ function Assert-LauncherCompatibility {
     }
 }
 
+function Assert-PortablePthClean {
+    param([Parameter(Mandatory = $true)][string]$AppDest)
+
+    $pthFile = Join-Path $AppDest "$EmbedDirName\python312._pth"
+    if (-not (Test-Path -LiteralPath $pthFile)) {
+        return
+    }
+
+    $forbiddenEntries = @(
+        Get-Content -LiteralPath $pthFile |
+            Where-Object {
+                $_ -match '^[A-Za-z]:\\' -or
+                $_ -match '^\\\\' -or
+                $_ -match '(?i)dist'
+            }
+    )
+    if ($forbiddenEntries.Count -gt 0) {
+        throw ("Forbidden path entry in staged python312._pth ({0}): {1}" -f $pthFile, ($forbiddenEntries -join " | "))
+    }
+}
+
 function Stage-Package {
     param(
         [Parameter(Mandatory = $true)][string]$StageRoot,
@@ -232,7 +253,6 @@ function Stage-Package {
         "logging_setup.py",
         "model_manager.py",
         "PRIVACY.md",
-        "README.md",
         "requirements.txt",
         "run_portable.bat",
         "run_portable.ps1",
@@ -305,7 +325,9 @@ exit /b %ERRORLEVEL%
     # Top-level bilingual READMEs — source files live in bashi-privacy-app/release_docs/
     # and are copied verbatim. Cross-link line at top of each: README.md says
     # "**English** | [中文文档](README_CN.md)"; README_CN.md says
-    # "[English](README.md) | **中文文档**".
+    # "[English](README.md) | **中文文档**", which only resolves when both sit
+    # side by side. They therefore ship at the package root only -- a second copy
+    # inside bashi-privacy-app/ was pure duplication and is deliberately not made.
     $releaseDocsDir = Join-Path $AppRoot "release_docs"
     foreach ($name in @("README.md", "README_CN.md")) {
         $src = Join-Path $releaseDocsDir $name
@@ -313,7 +335,6 @@ exit /b %ERRORLEVEL%
             throw "Missing top-level doc source: $src"
         }
         Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
-        Copy-Item -LiteralPath $src -Destination (Join-Path $appDest $name) -Force
     }
     foreach ($name in @("LICENSE", "VERSION")) {
         $src = Join-Path $AppRoot $name
@@ -336,6 +357,7 @@ exit /b %ERRORLEVEL%
     }
 
     Remove-StagedDebris -Root $StageRoot
+    Assert-PortablePthClean -AppDest $appDest
     Assert-LauncherCompatibility -AppDest $appDest
 }
 

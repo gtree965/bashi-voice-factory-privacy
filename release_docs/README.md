@@ -55,7 +55,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 ### 🛡️ Smart First-Launch Download with Resume
 - **HTTP Range / resume** built in — a transient WiFi drop won't restart your 2.2 GB GGUF download from zero.
 - **3-attempt retry** with exponential backoff for both pip dependencies and model files.
-- **China-friendly mirrors**: Aliyun PyPI mirror auto-detected by locale; GGUF runtime hosted on ModelScope; STT models hosted on hf-mirror.cn.
+- **China-friendly mirrors**: pip falls back through Aliyun → Tsinghua → PyPI when a mirror is unreachable or refuses your IP; GGUF runtime hosted on ModelScope; STT models hosted on hf-mirror.cn.
 
 ### 📱 LAN Sharing for Phone / Tablet Use
 - First-launch prompt: bind to `0.0.0.0` to allow access from any device on the same WiFi.
@@ -87,7 +87,7 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 
 **First launch only** (one-time, ~700 MB + ~2.2 GB):
 
-- pip dependencies from `https://mirrors.aliyun.com/pypi/simple/` (or PyPI default outside China)
+- pip dependencies from `https://mirrors.aliyun.com/pypi/simple/`, falling back to Tsinghua then PyPI (PyPI only, outside China)
 - GGUF model from `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime`
 - STT model (when user opts in) from `https://hf-mirror.com/csukuangfj/...` (or HuggingFace fallback)
 
@@ -155,6 +155,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 | `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from GitHub Releases or the files.fm mirror; the BOM bug was fixed in v0.1.0 final |
 | pip install stops mid-way after WiFi blip | Retry triggers automatically (3 attempts, 5s/30s/120s backoff). If all 3 fail, fix network and re-run the launcher — pip caches what's already installed |
 | pip install fails with a "long path support" message | Run the registry one-liner from the launcher's advisory in an Administrator PowerShell, then re-launch |
+| pip install fails on every mirror, or a mirror refuses your IP (`403` / `denied by IP ACL`) | The launcher already retries Aliyun → Tsinghua → PyPI. To force one index, set `BASHI_PIP_INDEX_URL` before launching, e.g. `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
 | App exits with "No usable backend was found" | Check `app.log` (structured, timestamped application logs) and `launch_log.txt` (launcher steps and raw stderr) — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
 | STT download says "镜像失败" | Should not happen in v0.1.0 final — old behavior from removed ModelScope path |
@@ -178,7 +179,6 @@ bashi-voice-factory-privacy-v0.1.3/
 │                                                         ← help PDF (bilingual)
 ├── bashi-privacy-app/                                   ← app code + embedded Python
 │   ├── run_portable.bat                                 ← same launcher, direct path
-│   ├── README.md                                        ← project README copy
 │   └── ...
 └── vulkan_backend_spike/                                ← GGUF runtime (populated on first launch)
     └── Qwen3-TTS-GGUF/

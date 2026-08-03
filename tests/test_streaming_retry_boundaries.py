@@ -56,6 +56,60 @@ class StreamingRetryBoundaryTests(unittest.TestCase):
         ]
         self.assertIn("if (!response.ok)", long_section)
 
+        with self.subTest(boundary="stale_long_done_cannot_take_over_player"):
+            done_start = long_section.index("else if (data.status === 'done')")
+            done_end = long_section.index(
+                "else if (data.status === 'error')", done_start
+            )
+            done_section = long_section[done_start:done_end]
+            self.assertIn("if (runToken !== state.runToken)", done_section)
+            self.assertIn("elements.audioPlayer.src = data.audio_url_mp3", done_section)
+
+        with self.subTest(boundary="generating_count_keeps_current_group_semantics"):
+            generating_start = long_section.index(
+                "if (data.status === 'generating')"
+            )
+            generating_end = long_section.index(
+                "else if (data.status === 'chunk_done')", generating_start
+            )
+            generating_section = long_section[generating_start:generating_end]
+            self.assertIn(
+                "countEl.textContent = `${data.chunk} / ${data.total}`",
+                generating_section,
+            )
+            self.assertIn("if (runToken !== state.runToken)", generating_section)
+
+        with self.subTest(boundary="stale_preview_chunk_cannot_restart_playback"):
+            preview_start = frontend.index("function handleLongPreviewChunk")
+            preview_end = frontend.index("\n}\n\n// Generate Long Audio", preview_start)
+            preview_section = frontend[preview_start:preview_end]
+            self.assertIn("if (runToken !== state.runToken) return", preview_section)
+            self.assertIn("handleLongPreviewChunk(data, runToken)", long_section)
+
+        with self.subTest(boundary="restart_status_is_run_scoped"):
+            self.assertIn("runToken: 0", frontend)
+            self.assertIn("const runToken = ++state.runToken", frontend)
+            for helper in ("showRestartRetryStatus", "clearRestartRetryStatus"):
+                helper_start = frontend.index(f"function {helper}")
+                helper_end = frontend.index("\n}\n", helper_start)
+                helper_section = frontend[helper_start:helper_end]
+                self.assertIn("runToken !== state.runToken", helper_section)
+
+        with self.subTest(boundary="all_409_responses_use_honest_retry_status"):
+            retry_start = frontend.index("async function postSynthesisWithRetry")
+            retry_end = frontend.index("// Generate Single Audio", retry_start)
+            retry_section = frontend[retry_start:retry_end]
+            self.assertIn("if (response.status !== 409)", retry_section)
+            self.assertNotIn(
+                "response.status !== 409 || !retryAfterStop", retry_section
+            )
+            self.assertIn(
+                "Waiting for the current synthesis to finish...", frontend
+            )
+            self.assertIn("上一次合成仍在进行，正在等待…", frontend)
+            self.assertIn("Stopping previous synthesis...", frontend)
+            self.assertIn("正在停止上一次合成…", frontend)
+
         with self.subTest(boundary="long_progress_playout_mode"):
             self.assertIn("function setLongProgressPlayoutMode(mode)", frontend)
             self.assertGreaterEqual(

@@ -10,6 +10,36 @@ Use this checklist for every tagged release.
   - `git diff --no-index -- README.md release_docs/README.md`
   - `git diff --no-index -- README_CN.md release_docs/README_CN.md`
   - Both commands must produce no diff.
-- Regenerate the bilingual User Guide PDF from the packaged READMEs using the established Pandoc + Edge headless flow.
+- Regenerate the bilingual User Guide PDF from the packaged READMEs. Run both commands from
+  `bashi-privacy-app/`; `<tmp>` is any scratch directory:
+
+  ```sh
+  # The separator is generated on the fly so the recipe needs no untracked file.
+  printf '<div style="page-break-before: always;"></div>\n' > <tmp>/pagebreak.md
+
+  # Drop line 1 of each README: it is the "English | 中文文档" switcher, whose
+  # relative link only resolves when both files sit side by side. Printed into a
+  # single bilingual PDF it becomes a link to a file that is not there, and the
+  # reader warns before trying to open it. The PDF already holds both languages.
+  tail -n +2 release_docs/README.md    > <tmp>/guide_en.md
+  tail -n +2 release_docs/README_CN.md > <tmp>/guide_zh.md
+
+  pandoc -s --metadata title="巴适声工厂隐私版使用手册 / Bashi Voice Factory Privacy Edition User Guide" \
+    --metadata lang=zh-CN \
+    <tmp>/guide_en.md <tmp>/pagebreak.md <tmp>/guide_zh.md \
+    -o <tmp>/bashi_privacy_user_guide.html
+
+  # Gate: no cross-file relative link may survive into the guide.
+  grep -c 'href="README' <tmp>/bashi_privacy_user_guide.html   # must print 0
+
+  msedge --headless=new --disable-gpu --no-pdf-header-footer \
+    --print-to-pdf="release_docs/巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf" \
+    "file:///<tmp>/bashi_privacy_user_guide.html"
+  ```
+
+  Order is English, page break, Chinese. Pandoc warns that it cannot load `zh-CN` translations;
+  that is harmless — these documents carry no abstract. Verify the result before committing:
+  the guide must contain the mirror-fallback troubleshooting row and both `app.log` and
+  `launch_log.txt` in the log-path guidance.
 - Run `python -m pytest tests` and require the full project suite to pass.
 - Commit the release files, create the annotated version tag, push `main` and the tag, then verify the remote SHAs.
