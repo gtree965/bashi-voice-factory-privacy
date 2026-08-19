@@ -15,6 +15,7 @@ os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import argparse
 import sys
+import time
 
 from flask import Flask, jsonify, render_template
 
@@ -61,6 +62,69 @@ def _probe_failure_causes(detail: str) -> tuple[list[str], list[str]]:
             "  - 可能已有另一个副本正在运行 —— 请先关闭它再重试。",
         )
     return english_causes, chinese_causes
+
+
+def _elapsed_since_epoch_ms(env_name: str) -> float | None:
+    raw_epoch_ms = os.environ.get(env_name)
+    if not raw_epoch_ms:
+        return None
+    try:
+        epoch_ms = int(raw_epoch_ms)
+        elapsed_ms = (time.time_ns() // 1_000_000) - epoch_ms
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if epoch_ms <= 0 or elapsed_ms < 0:
+        return None
+    return elapsed_ms / 1000.0
+
+
+def _log_launcher_handoff_elapsed() -> None:
+    """Log launcher-to-app.run handoff timings when the launcher stamped them."""
+    launcher_elapsed = _elapsed_since_epoch_ms("BASHI_LAUNCH_EPOCH")
+    if launcher_elapsed is not None:
+        logger.info(
+            "[Startup Timing] launcher_to_app_run_handoff_seconds=%.3f",
+            launcher_elapsed,
+        )
+
+    deps_ready_elapsed = _elapsed_since_epoch_ms("BASHI_DEPS_READY_EPOCH")
+    if deps_ready_elapsed is not None:
+        logger.info(
+            "[Startup Timing] deps_ready_to_app_run_handoff_seconds=%.3f",
+            deps_ready_elapsed,
+        )
+
+
+def _run_startup_warmup_if_requested() -> None:
+    """Best-effort startup warmup; optimization failure must not abort the app."""
+    if os.environ.get("LOCAL_TTS_WARMUP_ON_START") != "1":
+        return
+
+    logger.info("Warming up local TTS engine...")
+    try:
+        from tts_routes import run_warmup_synchronously
+
+        status = run_warmup_synchronously()
+    except Exception as exc:
+        logger.warning(
+            "Local TTS warmup failed; continuing server startup: %s",
+            _ascii_log_text(exc),
+        )
+        return
+
+    state = status.get("state")
+    if state == "ready":
+        logger.info("Warmup complete.")
+    elif state == "warming":
+        logger.warning(
+            "Local TTS warmup exceeded the startup wait; continuing while it runs."
+        )
+    else:
+        logger.warning(
+            "Local TTS warmup did not complete; continuing server startup: state=%s error=%s",
+            _ascii_log_text(state or "unknown"),
+            _ascii_log_text(status.get("error") or "unknown"),
+        )
 
 
 def create_app() -> Flask:
@@ -161,11 +225,8 @@ if __name__ == "__main__":
     logger.info("Press Ctrl+C to stop")
     logger.info("=" * 50)
 
-    if os.environ.get("LOCAL_TTS_WARMUP_ON_START") == "1":
-        logger.info("Warming up local TTS engine...")
-        from local_tts_engine import service
+    _log_launcher_handoff_elapsed()
 
-        service.warmup()
-        logger.info("Warmup complete.")
+    _run_startup_warmup_if_requested()
 
     app.run(debug=False, host=args.host, port=args.port)

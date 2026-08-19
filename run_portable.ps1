@@ -68,6 +68,7 @@ if (Test-LocalPortListening -TargetPort $Port) {
     exit 0
 }
 
+$env:BASHI_LAUNCH_EPOCH = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 ('[' + (Get-Date) + '] Privacy launcher started') | Set-Content -Path $LogFile -Encoding utf8
 "Working directory: $AppRoot" | Add-Content -Path $LogFile -Encoding utf8
 
@@ -533,6 +534,8 @@ else {
         exit 1
     }
 }
+
+$env:BASHI_DEPS_READY_EPOCH = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
 $ModelDownloadScript = Join-Path $AppRoot "download_gguf_model.py"
 if (Test-Path $ModelDownloadScript) {

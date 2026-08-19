@@ -122,6 +122,13 @@ class AppBootstrapTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertLess(
+            source.index("$env:BASHI_LAUNCH_EPOCH"),
+            source.index("\nEnsure-Pip\n"),
+        )
+        deps_ready_stamp = source.index("$env:BASHI_DEPS_READY_EPOCH")
+        self.assertLess(source.index("\nEnsure-Pip\n"), deps_ready_stamp)
+        self.assertLess(deps_ready_stamp, source.index("$ModelDownloadScript ="))
+        self.assertLess(
             source.index('$env:KMP_DUPLICATE_LIB_OK = "TRUE"'),
             source.index("('[STEP] Starting app.py"),
         )
@@ -152,6 +159,113 @@ class AppBootstrapTests(unittest.TestCase):
 
         self.assertLess(main_source.index("setup_logging()"), main_source.index("_bootstrap_backend_or_exit()"))
         self.assertLess(main_source.index("setup_logging()"), main_source.index("app.run("))
+        with self.subTest(boundary="startup_warmup_uses_real_synthesis_path"):
+            helper_start = source.index("def _run_startup_warmup_if_requested()")
+            helper_end = source.index("\n\ndef create_app()", helper_start)
+            warmup_helper = source[helper_start:helper_end]
+            self.assertIn("run_warmup_synchronously()", warmup_helper)
+            self.assertNotIn("service.warmup()", warmup_helper)
+            self.assertIn("_run_startup_warmup_if_requested()", main_source)
+        with self.subTest(boundary="launcher_timing_is_logged_at_app_run_handoff"):
+            self.assertLess(
+                main_source.index("_log_launcher_handoff_elapsed()"),
+                main_source.index("_run_startup_warmup_if_requested()"),
+            )
+            self.assertLess(
+                main_source.index("_log_launcher_handoff_elapsed()"),
+                main_source.index("app.run("),
+            )
+
+    def test_startup_warmup_failure_logs_ascii_and_continues(self) -> None:
+        with patch.dict(os.environ, {"LOCAL_TTS_WARMUP_ON_START": "1"}), patch(
+            "tts_routes.run_warmup_synchronously",
+            side_effect=RuntimeError("预热失败"),
+        ), patch.object(app.logger, "warning") as warning_mock:
+            app._run_startup_warmup_if_requested()
+
+        warning_mock.assert_called_once_with(
+            "Local TTS warmup failed; continuing server startup: %s",
+            "\\u9884\\u70ed\\u5931\\u8d25",
+        )
+
+    def test_startup_warmup_failed_state_logs_ascii_and_continues(self) -> None:
+        with patch.dict(os.environ, {"LOCAL_TTS_WARMUP_ON_START": "1"}), patch(
+            "tts_routes.run_warmup_synchronously",
+            return_value={"state": "failed", "error": "解码器失败"},
+        ), patch.object(app.logger, "warning") as warning_mock:
+            app._run_startup_warmup_if_requested()
+
+        warning_mock.assert_called_once_with(
+            "Local TTS warmup did not complete; continuing server startup: state=%s error=%s",
+            "failed",
+            "\\u89e3\\u7801\\u5668\\u5931\\u8d25",
+        )
+
+    def test_startup_warmup_timeout_state_logs_and_continues(self) -> None:
+        with patch.dict(os.environ, {"LOCAL_TTS_WARMUP_ON_START": "1"}), patch(
+            "tts_routes.run_warmup_synchronously",
+            return_value={"state": "warming", "error": None},
+        ), patch.object(app.logger, "warning") as warning_mock:
+            app._run_startup_warmup_if_requested()
+
+        warning_mock.assert_called_once_with(
+            "Local TTS warmup exceeded the startup wait; continuing while it runs."
+        )
+
+    def test_launcher_handoff_timings_are_logged_when_stamps_are_valid(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "BASHI_LAUNCH_EPOCH": "1000",
+                "BASHI_DEPS_READY_EPOCH": "2000",
+            },
+        ), patch(
+            "app.time.time_ns", return_value=3_500_000_000
+        ), patch.object(app.logger, "info") as info_mock:
+            app._log_launcher_handoff_elapsed()
+
+        self.assertEqual(
+            [
+                (
+                    "[Startup Timing] launcher_to_app_run_handoff_seconds=%.3f",
+                    2.5,
+                ),
+                (
+                    "[Startup Timing] deps_ready_to_app_run_handoff_seconds=%.3f",
+                    1.5,
+                ),
+            ],
+            [call.args for call in info_mock.call_args_list],
+        )
+
+    def test_launcher_handoff_timing_ignores_invalid_stamps_independently(self) -> None:
+        with patch.object(app.logger, "info") as info_mock:
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("BASHI_LAUNCH_EPOCH", None)
+                os.environ.pop("BASHI_DEPS_READY_EPOCH", None)
+                app._log_launcher_handoff_elapsed()
+            for value in ("not-a-number", "-1", "4000"):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "BASHI_LAUNCH_EPOCH": value,
+                        "BASHI_DEPS_READY_EPOCH": value,
+                    },
+                ), patch("app.time.time_ns", return_value=3_500_000_000):
+                    app._log_launcher_handoff_elapsed()
+            with patch.dict(
+                os.environ,
+                {
+                    "BASHI_LAUNCH_EPOCH": "not-a-number",
+                    "BASHI_DEPS_READY_EPOCH": "2000",
+                },
+            ), patch("app.time.time_ns", return_value=3_500_000_000):
+                app._log_launcher_handoff_elapsed()
+
+        info_mock.assert_called_once_with(
+            "[Startup Timing] deps_ready_to_app_run_handoff_seconds=%.3f",
+            1.5,
+        )
 
     def test_bootstrap_exits_cleanly_on_override_conflict(self) -> None:
         with patch(
