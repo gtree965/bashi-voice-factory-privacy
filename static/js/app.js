@@ -18,6 +18,12 @@ const state = {
     customInstruct: '',
     currentPreviewAudio: null,
     systemInfo: null,
+    warmup: {
+        state: 'cold',
+        elapsedSeconds: 0,
+        waitTimeoutSeconds: null,
+        startedAtMs: null
+    },
     cudaUpgrade: null,
     cudaUpgradeInProgress: false,
     benchmark: null,
@@ -168,7 +174,12 @@ const AUTOPLAY_FIRST_CHUNK_STORAGE_KEY = 'bashi_autoplay_first_chunk';
 const RESTART_RETRY_BUDGET_MS = 60000;
 const RESTART_RETRY_BASE_DELAY_MS = 250;
 const RESTART_RETRY_MAX_DELAY_MS = 750;
+const WARMUP_STATUS_POLL_DELAY_MS = 1500;
+const WARMUP_STATUS_RETRY_DELAYS_MS = [1500, 5000, 15000];
+const WARMUP_STATUS_MAX_RETRY_DELAY_MS =
+    WARMUP_STATUS_RETRY_DELAYS_MS[WARMUP_STATUS_RETRY_DELAYS_MS.length - 1];
 const LONG_PREVIEW_GAP_MS = 350;
+let warmupStatusPollFailures = 0;
 
 /**
  * Choose the one-time long-preview rebuffer target from
@@ -539,6 +550,13 @@ function renderFirstRunBanner() {
 function renderSystemInfo() {
     if (!elements.backendChip || !elements.backendChipLabel) return;
 
+    if (shouldSuppressBackendChipForWarmup()) {
+        elements.backendChip.className = 'backend-chip loading';
+        elements.backendChipLabel.textContent = t('Warming up engine...', '正在预热引擎…');
+        if (elements.backendDetail) elements.backendDetail.textContent = '';
+        return;
+    }
+
     const info = state.systemInfo;
     if (!info) {
         elements.backendChip.className = 'backend-chip loading';
@@ -558,6 +576,109 @@ function renderSystemInfo() {
             : '';
         elements.backendDetail.textContent = `${detail}${device}`;
     }
+}
+
+function getObservedWarmupElapsedSeconds() {
+    const serverElapsed = Math.max(0, Number(state.warmup.elapsedSeconds) || 0);
+    const startedAtMs = Number(state.warmup.startedAtMs);
+    if (!(startedAtMs > 0)) return serverElapsed;
+    return Math.max(serverElapsed, (Date.now() - startedAtMs) / 1000);
+}
+
+function shouldSuppressBackendChipForWarmup() {
+    if (state.warmup.state !== 'warming') return false;
+    const waitTimeoutSeconds = Number(state.warmup.waitTimeoutSeconds);
+    if (!(waitTimeoutSeconds > 0)) return true;
+
+    // Keep the chip suppressed past the server-side synthesis wait window by
+    // one maximum status-poll interval. The synthesis loading copy deliberately
+    // continues to follow state.warmup.state while the worker is still active.
+    const chipCeilingSeconds = waitTimeoutSeconds
+        + (WARMUP_STATUS_MAX_RETRY_DELAY_MS / 1000);
+    return getObservedWarmupElapsedSeconds() <= chipCeilingSeconds;
+}
+
+function applyWarmupStatus(status) {
+    const previous = state.warmup;
+    const nextState = ['cold', 'warming', 'ready', 'failed'].includes(status?.state)
+        ? status.state
+        : 'failed';
+    const elapsedSeconds = Math.max(0, Number(status?.elapsed_seconds) || 0);
+    const reportedWaitTimeout = Number(status?.wait_timeout_seconds);
+    const waitTimeoutSeconds = reportedWaitTimeout > 0
+        ? reportedWaitTimeout
+        : previous.waitTimeoutSeconds;
+    let startedAtMs = null;
+    if (nextState === 'warming') {
+        const inferredStartedAtMs = Date.now() - (elapsedSeconds * 1000);
+        startedAtMs = previous.state === 'warming' && previous.startedAtMs
+            ? Math.min(previous.startedAtMs, inferredStartedAtMs)
+            : inferredStartedAtMs;
+    }
+    state.warmup = {
+        state: nextState,
+        elapsedSeconds,
+        waitTimeoutSeconds,
+        startedAtMs
+    };
+    renderSystemInfo();
+    return nextState === 'ready' || nextState === 'failed';
+}
+
+function scheduleWarmupStatusPoll(delayMs) {
+    setTimeout(pollWarmupStatus, delayMs);
+}
+
+async function pollWarmupStatus() {
+    // Re-render before every attempt so the chip-only ceiling also advances
+    // while status requests are failing and no fresh server elapsed value lands.
+    renderSystemInfo();
+    try {
+        const response = await fetch('/api/warmup/status');
+        if (!response.ok) throw new Error(`Warmup status failed: HTTP ${response.status}`);
+        warmupStatusPollFailures = 0;
+        const finished = applyWarmupStatus(await response.json());
+        if (!finished) {
+            const delayMs = shouldSuppressBackendChipForWarmup()
+                ? WARMUP_STATUS_POLL_DELAY_MS
+                : WARMUP_STATUS_MAX_RETRY_DELAY_MS;
+            scheduleWarmupStatusPoll(delayMs);
+        }
+    } catch (_) {
+        // Preserve the last known server state: a transient local fetch failure
+        // must not turn a genuinely running warmup into a false client failure.
+        warmupStatusPollFailures += 1;
+        const delayIndex = Math.min(
+            warmupStatusPollFailures - 1,
+            WARMUP_STATUS_RETRY_DELAYS_MS.length - 1
+        );
+        renderSystemInfo();
+        scheduleWarmupStatusPoll(WARMUP_STATUS_RETRY_DELAYS_MS[delayIndex]);
+    }
+}
+
+function startWarmup(retryCount = 0) {
+    fetch('/api/warmup', { method: 'POST' })
+        .then(response => {
+            if (!response.ok) throw new Error(`Warmup start failed: HTTP ${response.status}`);
+            return response.json();
+        })
+        .then(status => {
+            const finished = applyWarmupStatus(status);
+            if (!finished) scheduleWarmupStatusPoll(WARMUP_STATUS_POLL_DELAY_MS);
+        })
+        .catch(() => {
+            // A transient POST failure says nothing about server warmup state.
+            // Keep the client cold and retry without blocking the rest of init().
+            const delayIndex = Math.min(
+                retryCount,
+                WARMUP_STATUS_RETRY_DELAYS_MS.length - 1
+            );
+            setTimeout(
+                () => startWarmup(retryCount + 1),
+                WARMUP_STATUS_RETRY_DELAYS_MS[delayIndex]
+            );
+        });
 }
 
 function renderBenchmarkReferencePanel(references = null) {
@@ -925,6 +1046,7 @@ const DEMO_TEXTS = {
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+    startWarmup();
     await loadVoices();
     await loadSttModels();
     restoreAutoplayPreference();
@@ -1444,9 +1566,16 @@ async function generateSpeech() {
     // pinned to "正在合成第 N/N 句..."
     const loadingSpan = elements.loading.querySelector('span');
     if (loadingSpan) {
-        loadingSpan.setAttribute('data-en', 'Generating...');
-        loadingSpan.setAttribute('data-zh', '正在生成...');
-        loadingSpan.textContent = state.currentLang === 'zh' ? '正在生成...' : 'Generating...';
+        const warming = state.warmup.state === 'warming';
+        const loadingEn = warming
+            ? 'Warming up the engine; synthesis will start shortly…'
+            : 'Generating...';
+        const loadingZh = warming
+            ? '正在预热引擎，稍后自动开始…'
+            : '正在生成...';
+        loadingSpan.setAttribute('data-en', loadingEn);
+        loadingSpan.setAttribute('data-zh', loadingZh);
+        loadingSpan.textContent = state.currentLang === 'zh' ? loadingZh : loadingEn;
     }
     elements.playerSection.style.display = 'none';
     elements.sentencePlayerSection.style.display = 'none';
@@ -1962,9 +2091,16 @@ async function generateLongAudio(text, instruct, signal, retryAfterStop = false,
     countEl.textContent = `0 / ${initialGroupTotal}`;
 
     // Switch to English text immediately if needed to avoid flicker
-    textEl.setAttribute('data-en', 'Initializing...');
-    textEl.setAttribute('data-zh', '初始化...');
-    textEl.textContent = state.currentLang === 'zh' ? '初始化...' : 'Initializing...';
+    const warming = state.warmup.state === 'warming';
+    const initialEn = warming
+        ? 'Warming up the engine; synthesis will start shortly…'
+        : 'Initializing...';
+    const initialZh = warming
+        ? '正在预热引擎，稍后自动开始…'
+        : '初始化...';
+    textEl.setAttribute('data-en', initialEn);
+    textEl.setAttribute('data-zh', initialZh);
+    textEl.textContent = state.currentLang === 'zh' ? initialZh : initialEn;
 
     try {
         const response = await postSynthesisWithRetry(

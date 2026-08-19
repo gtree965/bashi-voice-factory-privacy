@@ -38,6 +38,71 @@ class StreamingRetryBoundaryTests(unittest.TestCase):
         with self.subTest(boundary="restart_retry_delay_cap"):
             self.assertIn("RESTART_RETRY_MAX_DELAY_MS = 750", frontend)
 
+        with self.subTest(boundary="warmup_has_independent_real_synthesis_text"):
+            self.assertIn(
+                'WARMUP_TEXT = "今天下午三点，我们将在会议室讨论项目进展和预算表。"',
+                routes,
+            )
+            self.assertNotIn("WARMUP_TEXT = BENCHMARK_TEXT", routes)
+            self.assertNotIn("WARMUP_TEXT = BENCHMARK_WARMUP_TEXT", routes)
+            self.assertIn("benchmark wording and UI cold-start coverage", routes)
+
+        with self.subTest(boundary="warmup_polling_preserves_server_state_on_transient_failure"):
+            poll_start = frontend.index("async function pollWarmupStatus()")
+            poll_end = frontend.index("\n}\n\nfunction startWarmup", poll_start)
+            poll_section = frontend[poll_start:poll_end]
+            catch_section = poll_section[poll_section.index("} catch (_) {") :]
+            self.assertIn(
+                "WARMUP_STATUS_RETRY_DELAYS_MS = [1500, 5000, 15000]",
+                frontend,
+            )
+            self.assertIn("scheduleWarmupStatusPoll", catch_section)
+            self.assertNotIn("applyWarmupStatus({ state: 'failed'", catch_section)
+
+        with self.subTest(boundary="warmup_start_retries_without_false_failed_state"):
+            start_start = frontend.index("function startWarmup(")
+            start_end = frontend.index("\n}\n\nfunction renderBenchmarkReferencePanel", start_start)
+            start_section = frontend[start_start:start_end]
+            self.assertIn("WARMUP_STATUS_RETRY_DELAYS_MS", start_section)
+            self.assertIn("startWarmup(retryCount + 1)", start_section)
+            self.assertNotIn("applyWarmupStatus({ state: 'failed'", start_section)
+
+        with self.subTest(boundary="warmup_polling_slows_after_chip_ceiling"):
+            poll_start = frontend.index("async function pollWarmupStatus()")
+            poll_end = frontend.index("\n}\n\nfunction startWarmup", poll_start)
+            poll_section = frontend[poll_start:poll_end]
+            self.assertIn("shouldSuppressBackendChipForWarmup()", poll_section)
+            self.assertIn("WARMUP_STATUS_POLL_DELAY_MS", poll_section)
+            self.assertIn("WARMUP_STATUS_MAX_RETRY_DELAY_MS", poll_section)
+
+        with self.subTest(boundary="warmup_chip_cap_uses_server_wait_but_loading_copy_does_not"):
+            render_start = frontend.index("function renderSystemInfo()")
+            render_end = frontend.index("\n}\n\nfunction getObservedWarmupElapsedSeconds", render_start)
+            render_section = frontend[render_start:render_end]
+            suppress_start = frontend.index("function shouldSuppressBackendChipForWarmup()")
+            suppress_end = frontend.index("\n}\n\nfunction applyWarmupStatus", suppress_start)
+            suppress_section = frontend[suppress_start:suppress_end]
+            self.assertIn("shouldSuppressBackendChipForWarmup()", render_section)
+            self.assertIn("waitTimeoutSeconds", suppress_section)
+            self.assertIn("WARMUP_STATUS_MAX_RETRY_DELAY_MS", suppress_section)
+            self.assertIn('"wait_timeout_seconds": WARMUP_WAIT_TIMEOUT', routes)
+            self.assertGreaterEqual(
+                frontend.count("state.warmup.state === 'warming'"),
+                2,
+            )
+
+        with self.subTest(boundary="warmup_starts_before_other_ui_requests"):
+            init_start = frontend.index("async function init()")
+            init_end = frontend.index("\n}", init_start)
+            init_section = frontend[init_start:init_end]
+            self.assertLess(init_section.index("startWarmup();"), init_section.index("await loadVoices();"))
+
+        with self.subTest(boundary="warmup_loading_copy_is_bilingual"):
+            self.assertIn("Warming up the engine; synthesis will start shortly…", frontend)
+            self.assertIn("正在预热引擎，稍后自动开始…", frontend)
+            self.assertIn("Warming up engine...", frontend)
+            self.assertIn("正在预热引擎…", frontend)
+
         with self.subTest(boundary="complete_audio_takes_over_preview"):
             listener_start = frontend.index("elements.audioPlayer?.addEventListener('play'")
             listener_end = frontend.index("\n    });", listener_start)

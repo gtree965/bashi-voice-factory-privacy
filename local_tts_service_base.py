@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from local_voice_catalog import build_voice_catalog
 
 APP_ROOT = Path(__file__).resolve().parent
 SPEAKERS_PATH = APP_ROOT / "bashi_tts_kernel" / "speakers.json"
+WARMUP_WAIT_TIMEOUT = float(os.environ.get("BASHI_WARMUP_WAIT_TIMEOUT", "180"))
 
 
 class LocalTTSError(RuntimeError):
@@ -26,6 +28,7 @@ class LocalTTSServiceBase:
         self._state = "unloaded"
         self._state_lock = threading.RLock()
         self._busy_lock = threading.Lock()
+        self._warmup_active = threading.Event()
         self._load_error = None
         self._speakers = self._load_speakers()
 
@@ -60,6 +63,25 @@ class LocalTTSServiceBase:
 
     def warmup(self):
         self._ensure_loaded()
+
+    def mark_warmup_started(self) -> None:
+        self._warmup_active.set()
+
+    def mark_warmup_finished(self) -> None:
+        self._warmup_active.clear()
+
+    def _acquire_busy(self) -> None:
+        if self._busy_lock.acquire(blocking=False):
+            return
+
+        # Only a UI-triggered warmup may make a synthesis request wait for the
+        # engine. Ordinary request-vs-request conflicts must remain immediate
+        # LocalTTSBusyError responses so the frontend's 409 retry UX still owns
+        # that separate handoff path.
+        if self._warmup_active.is_set() and self._busy_lock.acquire(timeout=WARMUP_WAIT_TIMEOUT):
+            return
+
+        raise LocalTTSBusyError("Local TTS engine is busy with another request")
 
     def resolve_speaker(self, requested_id: str | None) -> dict:
         speaker_id = requested_id or self._speakers["default_speaker"]

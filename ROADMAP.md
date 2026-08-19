@@ -185,6 +185,10 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 - In v0.1.4, expand `data/zh_confusion.tsv` only from real user audio mistakes, with each candidate classified as safe global replacement, phrase-anchored replacement, or disabled dangerous item.
 - Refactor duplicated STT VAD/WAV logic after the product direction settles.
 
+### Post-v0.1.3 follow-up implemented for v0.1.4
+
+- Asynchronous full-path TTS warmup now starts when the UI loads, using a throwaway synthesis rather than model loading alone. The UI shows a neutral warming state, an early synthesis waits for warmup, and ordinary request conflicts still return immediately.
+
 ---
 
 ## v0.2.0 — Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian

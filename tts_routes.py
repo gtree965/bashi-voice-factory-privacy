@@ -26,9 +26,12 @@ from download_cuda_runtime import (
     is_cuda_runtime_installed,
 )
 from local_tts_engine import OUTPUT_DIR, LocalTTSBusyError, LocalTTSError, service
+from local_tts_service_base import WARMUP_WAIT_TIMEOUT
+from logging_setup import get_logger
 
 
 tts_bp = Blueprint("tts", __name__)
+logger = get_logger(__name__)
 APP_ROOT = Path(__file__).resolve().parent
 
 
@@ -44,12 +47,27 @@ def _read_app_version() -> str:
 VERSION = _read_app_version()
 BENCHMARK_TEXT = "今天下午三点，我们将在会议室讨论项目进展和预算表。"
 BENCHMARK_WARMUP_TEXT = "你好。"
+# Keep this as an independent literal even while it matches BENCHMARK_TEXT:
+# benchmark wording and UI cold-start coverage have separate product semantics.
+WARMUP_TEXT = "今天下午三点，我们将在会议室讨论项目进展和预算表。"
 BENCHMARK_TIMEOUT_SECONDS = 180
+WARMUP_STARTUP_TIMEOUT_SECONDS = float(
+    os.environ.get("BASHI_STARTUP_WARMUP_TIMEOUT", "180")
+)
 REFERENCE_CHAR_COUNTS = (1000, 5000)
 VALID_SYNTHESIS_MODES = {"auto", "single", "long", "sentence", "reference"}
 _BENCHMARK_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _BENCHMARK_LOCK = threading.RLock()
 _BENCHMARK_FUTURE = None
+_WARMUP_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+_WARMUP_LOCK = threading.RLock()
+_WARMUP_FUTURE = None
+_WARMUP_STATE = {
+    "state": "cold",
+    "started_at": None,
+    "elapsed_seconds": None,
+    "error": None,
+}
 _SYSTEM_INFO_LOCK = threading.RLock()
 _SYSTEM_INFO_CACHE = None
 _CUDA_INSTALL_LOCK = threading.Lock()
@@ -369,6 +387,120 @@ def _delete_generated_audio(filename: str | None) -> None:
         pass
 
 
+def _warmup_status_payload() -> dict:
+    with _WARMUP_LOCK:
+        state = _WARMUP_STATE["state"]
+        elapsed_seconds = _WARMUP_STATE["elapsed_seconds"]
+        started_at = _WARMUP_STATE["started_at"]
+        if state == "warming" and started_at is not None:
+            elapsed_seconds = max(0.0, time.monotonic() - started_at)
+        return {
+            "success": True,
+            "state": state,
+            "elapsed_seconds": elapsed_seconds,
+            "wait_timeout_seconds": WARMUP_WAIT_TIMEOUT,
+            "error": _WARMUP_STATE["error"],
+        }
+
+
+def _ascii_log_text(value: object) -> str:
+    """Keep dynamic warmup diagnostics machine-readable in app.log."""
+    return str(value).encode("ascii", errors="backslashreplace").decode("ascii")
+
+
+def _finish_warmup(state: str, error: str | None) -> None:
+    with _WARMUP_LOCK:
+        started_at = _WARMUP_STATE["started_at"]
+        elapsed_seconds = (
+            max(0.0, time.monotonic() - started_at)
+            if started_at is not None
+            else 0.0
+        )
+        _WARMUP_STATE.update(
+            state=state,
+            elapsed_seconds=elapsed_seconds,
+            error=error,
+        )
+    if state == "ready":
+        logger.info(
+            "[Warmup Timing] state=ready elapsed_seconds=%.3f",
+            elapsed_seconds,
+        )
+    else:
+        logger.warning(
+            "[Warmup Timing] state=failed elapsed_seconds=%.3f error=%s",
+            elapsed_seconds,
+            _ascii_log_text(error or "unknown"),
+        )
+
+
+def _warmup_worker() -> None:
+    filename = None
+    try:
+        filename = service.synthesize_text(WARMUP_TEXT, None)
+        _delete_generated_audio(filename)
+        _finish_warmup("ready", None)
+    except Exception as exc:
+        _finish_warmup("failed", str(exc))
+    finally:
+        service.mark_warmup_finished()
+
+
+def _clear_warmup_future(future) -> None:
+    global _WARMUP_FUTURE
+    with _WARMUP_LOCK:
+        if _WARMUP_FUTURE is future:
+            _WARMUP_FUTURE = None
+
+
+def _begin_warmup() -> dict:
+    global _WARMUP_FUTURE
+
+    with _WARMUP_LOCK:
+        if _WARMUP_STATE["state"] == "ready":
+            return _warmup_status_payload()
+        if _WARMUP_FUTURE is not None and not _WARMUP_FUTURE.done():
+            return _warmup_status_payload()
+
+        # Set this in the request thread before submit. Otherwise a synthesis
+        # request can land after the task is queued but before its worker starts
+        # and incorrectly receive an immediate busy response.
+        service.mark_warmup_started()
+        _WARMUP_STATE.update(
+            state="warming",
+            started_at=time.monotonic(),
+            elapsed_seconds=0.0,
+            error=None,
+        )
+        try:
+            future = _WARMUP_EXECUTOR.submit(_warmup_worker)
+        except Exception as exc:
+            service.mark_warmup_finished()
+            _finish_warmup("failed", str(exc))
+            return _warmup_status_payload()
+
+        _WARMUP_FUTURE = future
+        future.add_done_callback(_clear_warmup_future)
+        return _warmup_status_payload()
+
+
+def run_warmup_synchronously() -> dict:
+    """Start the UI warmup path and wait briefly without making startup fatal."""
+    _begin_warmup()
+    with _WARMUP_LOCK:
+        pending = _WARMUP_FUTURE
+
+    if pending is not None and not pending.done():
+        try:
+            pending.result(timeout=WARMUP_STARTUP_TIMEOUT_SECONDS)
+        except TimeoutError:
+            # The worker remains authoritative and keeps _warmup_active set.
+            # app.py starts the server; UI requests then wait on this same job.
+            pass
+
+    return _warmup_status_payload()
+
+
 def _format_seconds(seconds: float | None) -> dict | None:
     if seconds is None:
         return None
@@ -499,6 +631,16 @@ def _clear_benchmark_future(future):
     with _BENCHMARK_LOCK:
         if _BENCHMARK_FUTURE is future:
             _BENCHMARK_FUTURE = None
+
+
+@tts_bp.route("/api/warmup", methods=["POST"])
+def start_warmup():
+    return jsonify(_begin_warmup())
+
+
+@tts_bp.route("/api/warmup/status")
+def get_warmup_status():
+    return jsonify(_warmup_status_payload())
 
 
 @tts_bp.route("/api/voices")

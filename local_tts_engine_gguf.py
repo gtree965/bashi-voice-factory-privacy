@@ -331,8 +331,7 @@ class LocalTTSService(LocalTTSServiceBase):
         instruct: str = "",
         progress_callback=None,
     ) -> str:
-        if not self._busy_lock.acquire(blocking=False):
-            raise LocalTTSBusyError("Local TTS engine is busy with another request")
+        self._acquire_busy()
         try:
             return self._generate_mp3_no_lock(text, voice_id, instruct=instruct)
         finally:
@@ -350,8 +349,7 @@ class LocalTTSService(LocalTTSServiceBase):
 
             return _empty()
 
-        if not self._busy_lock.acquire(blocking=False):
-            raise LocalTTSBusyError("Local TTS engine is busy with another request")
+        self._acquire_busy()
 
         try:
             event_queue: queue.Queue = queue.Queue()
@@ -378,8 +376,7 @@ class LocalTTSService(LocalTTSServiceBase):
 
             return _empty()
 
-        if not self._busy_lock.acquire(blocking=False):
-            raise LocalTTSBusyError("Local TTS engine is busy with another request")
+        self._acquire_busy()
 
         try:
             event_queue: queue.Queue = queue.Queue()

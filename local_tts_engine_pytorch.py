@@ -137,8 +137,7 @@ class LocalTTSService(LocalTTSServiceBase):
         instruct: str = "",
         progress_callback=None,
     ) -> str:
-        if not self._busy_lock.acquire(blocking=False):
-            raise LocalTTSBusyError("Local TTS engine is busy with another request")
+        self._acquire_busy()
         try:
             return self._generate_mp3_no_lock(
                 text,
@@ -163,8 +162,7 @@ class LocalTTSService(LocalTTSServiceBase):
 
         # Synchronous busy check: raise before returning the generator so the
         # caller can translate it into a 409 without opening an SSE stream.
-        if not self._busy_lock.acquire(blocking=False):
-            raise LocalTTSBusyError("Local TTS engine is busy with another request")
+        self._acquire_busy()
 
         try:
             return self._iter_sentence_events(filtered, voice_id, instruct)
@@ -234,8 +232,7 @@ class LocalTTSService(LocalTTSServiceBase):
         #   worker keeps running to kernel completion. The resulting MP3
         #   lands in static/audio/ with no one to fetch it. This is an
         #   intentional Phase 2 tradeoff; true cancellation is deferred.
-        if not self._busy_lock.acquire(blocking=False):
-            raise LocalTTSBusyError("Local TTS engine is busy with another request")
+        self._acquire_busy()
 
         try:
             event_queue: queue.Queue = queue.Queue()
