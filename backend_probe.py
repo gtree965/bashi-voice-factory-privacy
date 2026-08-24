@@ -521,7 +521,7 @@ def _run_isolated_probe(
     ]
     child_env = dict(os.environ)
     child_env["PYTHONUTF8"] = "1"
-    child_env.setdefault("PYTHONIOENCODING", "utf-8")
+    child_env["PYTHONIOENCODING"] = "utf-8"
     child_env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     try:
         result = subprocess.run(

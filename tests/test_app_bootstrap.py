@@ -1,5 +1,6 @@
-import os
 import ast
+import codecs
+import os
 import subprocess
 import sys
 import unittest
@@ -82,7 +83,21 @@ class AppBootstrapTests(unittest.TestCase):
 
     def test_openmp_workaround_is_set_before_runtime_imports(self) -> None:
         self.assertEqual("TRUE", os.environ.get("KMP_DUPLICATE_LIB_OK"))
-        self.assertEqual("utf-8", os.environ.get("PYTHONIOENCODING"))
+        python_io_encoding = os.environ.get("PYTHONIOENCODING", "")
+        encoding_name = python_io_encoding.partition(":")[0]
+        self.assertTrue(
+            encoding_name,
+            "PYTHONIOENCODING must explicitly name a UTF-8 encoding; "
+            f"got {python_io_encoding!r}",
+        )
+        try:
+            normalized_encoding = codecs.lookup(encoding_name).name
+        except LookupError:
+            self.fail(
+                "PYTHONIOENCODING must name a recognized UTF-8 encoding; "
+                f"got {python_io_encoding!r}"
+            )
+        self.assertEqual("utf-8", normalized_encoding)
 
         source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
         self.assertLess(

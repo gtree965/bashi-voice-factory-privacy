@@ -8,9 +8,10 @@ import os
 # --- Environment hardening (must precede all heavy imports) ---
 # OMP Error #15: torch libiomp5md x ggml libomp140 duplicate runtimes.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-# Best-effort UTF-8 for this process's own stdio and non-isolated children such
-# as the probe subprocess. Isolated mp-spawn workers ignore PYTHON* env via -I;
-# local_tts_engine_gguf.py injects command-line -X utf8=1 for those workers.
+# Best-effort UTF-8 for subsequent non-isolated Python children. Setting this
+# after interpreter startup does not reconfigure this process's existing stdio.
+# Isolated mp-spawn workers ignore PYTHON* env via -I; local_tts_engine_gguf.py
+# injects command-line -X utf8=1 for those workers.
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import argparse

@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import unittest
@@ -416,8 +417,9 @@ class BackendProbeTests(unittest.TestCase):
             stderr="",
         )
 
-        with patch("backend_probe.subprocess.run", return_value=child) as run:
-            _run_isolated_probe("gguf")
+        with patch.dict(os.environ, {"PYTHONIOENCODING": "gbk"}):
+            with patch("backend_probe.subprocess.run", return_value=child) as run:
+                _run_isolated_probe("gguf")
 
         self.assertEqual(run.call_args.kwargs["env"]["KMP_DUPLICATE_LIB_OK"], "TRUE")
         self.assertEqual(run.call_args.kwargs["env"]["PYTHONIOENCODING"], "utf-8")
