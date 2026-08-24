@@ -56,11 +56,21 @@ desktop.ini
 roadmap_review_report_by_*.md
 *.srt
 
-# Only the automated regression suite is tracked. The GGUF baseline fixtures
-# and the manual probe harness stay local-only: they are large, machine
-# specific, and carry sample text that must not ship in a public repository.
+# Test tracking rule: a runner+test pair enters git only when it is
+# self-contained (no .tmp/ fixtures, no untracked module) and green on a clean
+# checkout, because RELEASE_CHECKLIST gates releases on `python -m pytest tests`.
+# Everything else -- GGUF baseline fixtures, one-off experiment harnesses --
+# stays local-only: large, machine specific, and must not ship.
 tests/*
 !tests/test_*.py
+!tests/run_clone_blind_a.py
+
+# Re-ignored: a one-off experiment harness that happens to match test_*.py.
+# Its runner is local-only, and seven of its cases read
+# .tmp/voice_anchor_pilot/precomputed_product_inputs.json, so tracking it would
+# turn a clean checkout red. Sealed evidence under .tmp/m1a_base_icl/ carries
+# the audit trail instead.
+tests/test_m1a_base_icl_longform.py
 
 # Generated audio, except product UI style previews.
 static/audio/*
