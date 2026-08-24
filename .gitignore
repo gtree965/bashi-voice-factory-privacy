@@ -78,3 +78,11 @@ models/
 *.pt
 *.pth
 *.bin
+
+# Third-party voice reference material (downloaded, NOT ours).
+# Test-only: usable for local clone/blind-test work, but carries third-party
+# rights and must never be committed or shipped in a release package.
+/data_aishell3.tgz
+/data_aishell3/
+800多克隆必备音色素材合集/
+800多克隆必备音色素材合集.zip

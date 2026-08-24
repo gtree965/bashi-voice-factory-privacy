@@ -224,6 +224,73 @@ function Assert-PortablePthClean {
     }
 }
 
+function Assert-StagedStylePreviewsMatchGit {
+    param([Parameter(Mandatory = $true)][string]$AppDest)
+
+    $stagedRoot = Join-Path $AppDest "static\audio\style_previews"
+    if (-not (Test-Path -LiteralPath $stagedRoot -PathType Container)) {
+        throw "Missing staged style preview directory: $stagedRoot"
+    }
+
+    $appDestFull = [System.IO.Path]::GetFullPath($AppDest).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $appDestPrefix = $appDestFull + [System.IO.Path]::DirectorySeparatorChar
+    $stagedFiles = @(
+        Get-ChildItem -LiteralPath $stagedRoot -Recurse -Force -File |
+            ForEach-Object {
+                $fullPath = [System.IO.Path]::GetFullPath($_.FullName)
+                if (-not $fullPath.StartsWith($appDestPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Staged style preview escaped package root: $fullPath"
+                }
+                $fullPath.Substring($appDestPrefix.Length).Replace("\", "/").ToLowerInvariant()
+            } |
+            Sort-Object -Unique
+    )
+
+    $trackedOutput = @(
+        & git -C $AppRoot ls-files -- "static/audio/style_previews/**"
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "git ls-files failed while checking distributable style previews."
+    }
+    $trackedFiles = @(
+        $trackedOutput |
+            ForEach-Object { $_.Trim().Replace("\", "/").ToLowerInvariant() } |
+            Where-Object { $_ } |
+            Sort-Object -Unique
+    )
+
+    $trackedLookup = @{}
+    foreach ($path in $trackedFiles) {
+        $trackedLookup[$path] = $true
+    }
+    $stagedLookup = @{}
+    foreach ($path in $stagedFiles) {
+        $stagedLookup[$path] = $true
+    }
+
+    $unexpected = @($stagedFiles | Where-Object { -not $trackedLookup.ContainsKey($_) })
+    $missing = @($trackedFiles | Where-Object { -not $stagedLookup.ContainsKey($_) })
+    if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
+        $details = @()
+        if ($unexpected.Count -gt 0) {
+            $details += "Unexpected staged files (not tracked by git):"
+            foreach ($path in $unexpected) {
+                $details += "  + $path"
+            }
+        }
+        if ($missing.Count -gt 0) {
+            $details += "Tracked files missing from staging:"
+            foreach ($path in $missing) {
+                $details += "  - $path"
+            }
+        }
+        throw ("Style preview distribution gate failed.`n" + ($details -join "`n"))
+    }
+}
+
 function Stage-Package {
     param(
         [Parameter(Mandatory = $true)][string]$StageRoot,
@@ -357,6 +424,7 @@ exit /b %ERRORLEVEL%
     }
 
     Remove-StagedDebris -Root $StageRoot
+    Assert-StagedStylePreviewsMatchGit -AppDest $appDest
     Assert-PortablePthClean -AppDest $appDest
     Assert-LauncherCompatibility -AppDest $appDest
 }

@@ -41,5 +41,26 @@ Use this checklist for every tagged release.
   that is harmless — these documents carry no abstract. Verify the result before committing:
   the guide must contain the mirror-fallback troubleshooting row and both `app.log` and
   `launch_log.txt` in the log-path guidance.
+- **Third-party audio gate.** `static/audio/style_previews/` is the only audio directory the
+  packaging script ships, and it is copied by a plain recursive filesystem copy
+  (`Copy-RelativeDirectory` in `scripts/build_portable_zip.ps1`). That copy does not consult git,
+  so **an untracked file dropped into that directory still ships**. Before every release:
+  - Every file in `static/audio/style_previews/` must have a traceable origin and explicit
+    redistribution rights. Reference human voices, user uploads, and any clone/voice-conversion
+    derivative are barred from this directory.
+  - Both commands must produce no output and no diff:
+
+    ```sh
+    git status --porcelain=v1 --untracked-files=all -- static/audio/style_previews
+    git diff --quiet -- static/audio/style_previews
+    ```
+
+  - The portable build independently compares the staged file set with
+    `git ls-files static/audio/style_previews/**`. Any extra or missing path is listed and aborts
+    the build before compression; path separators and case are normalized for Windows.
+  - Rights posture for generated audio: clone output can implicate source-material licensing,
+    voice/personality rights, privacy, and copyright. **Until the rights status of a given clip is
+    explicitly recorded, treat it as non-distributable.** A `.gitignore` entry only prevents
+    accidental commits; it grants nothing and proves nothing about permission to use the material.
 - Run `python -m pytest tests` and require the full project suite to pass.
 - Commit the release files, create the annotated version tag, push `main` and the tag, then verify the remote SHAs.

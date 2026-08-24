@@ -235,6 +235,31 @@ class PortableDependencyInstallTests(unittest.TestCase):
         self.assertIn("$forbiddenEntries -join", gate)
         self.assertIn("Assert-PortablePthClean -AppDest $appDest", build)
 
+    def test_build_gates_staged_style_previews_against_git_index(self) -> None:
+        build = (APP_ROOT / "scripts" / "build_portable_zip.ps1").read_text(
+            encoding="utf-8"
+        )
+        gate_start = build.index("function Assert-StagedStylePreviewsMatchGit")
+        gate_end = build.index("function Stage-Package", gate_start)
+        gate = build[gate_start:gate_end]
+
+        self.assertIn('Get-ChildItem -LiteralPath $stagedRoot -Recurse -Force -File', gate)
+        self.assertIn(
+            '& git -C $AppRoot ls-files -- "static/audio/style_previews/**"', gate
+        )
+        self.assertIn("ToLowerInvariant()", gate)
+        self.assertIn('Replace("\\", "/")', gate)
+        self.assertIn("Unexpected staged files (not tracked by git):", gate)
+        self.assertIn("Tracked files missing from staging:", gate)
+
+        copy_index = build.index('"static\\audio\\style_previews"')
+        call_index = build.index(
+            "Assert-StagedStylePreviewsMatchGit -AppDest $appDest", copy_index
+        )
+        compress_index = build.index("function Compress-StagedPackage", call_index)
+        self.assertLess(copy_index, call_index)
+        self.assertLess(call_index, compress_index)
+
     def test_build_ships_the_bilingual_readmes_only_at_the_package_root(self) -> None:
         build = (APP_ROOT / "scripts" / "build_portable_zip.ps1").read_text(
             encoding="utf-8"
