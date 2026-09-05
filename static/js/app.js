@@ -1312,7 +1312,7 @@ function setupEventListeners() {
 
     if (elements.updateCheckBtn) {
         elements.updateCheckBtn.addEventListener('click', () => {
-            window.open('https://files.fm/u/juvstxmrez', '_blank', 'noopener');
+            window.open('https://gitee.com/gtree965/', '_blank', 'noopener');
         });
     }
 

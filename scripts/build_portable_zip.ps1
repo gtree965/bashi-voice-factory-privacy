@@ -224,6 +224,30 @@ function Assert-PortablePthClean {
     }
 }
 
+function Assert-PdfUserGuideSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$PdfPath,
+        [Parameter(Mandatory = $true)][string]$AppRoot
+    )
+
+    # Releases v0.1.1-v0.1.3 shipped a guide whose internal LICENSE / VERSION
+    # links had been resolved against the build machine, leaving every reader
+    # with dead links. The gate fails closed: no verifier, no package.
+    $python = Join-Path $AppRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $python)) {
+        throw "Cannot verify the PDF user guide: interpreter not found at $python"
+    }
+    $checker = Join-Path $AppRoot "scripts\check_pdf_links.py"
+    if (-not (Test-Path -LiteralPath $checker)) {
+        throw "Cannot verify the PDF user guide: checker not found at $checker"
+    }
+
+    & $python $checker $PdfPath
+    if ($LASTEXITCODE -ne 0) {
+        throw ("PDF user guide failed the release gate (exit {0}): {1}" -f $LASTEXITCODE, $PdfPath)
+    }
+}
+
 function Assert-StagedStylePreviewsMatchGit {
     param([Parameter(Mandatory = $true)][string]$AppDest)
 
@@ -411,17 +435,24 @@ exit /b %ERRORLEVEL%
         Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
     }
 
-    # Optional bilingual PDF help file. Alex generates this locally (Word
-    # "Save as PDF", or Pandoc + Edge headless print-to-pdf) and drops it
-    # at the path below. Build succeeds with a warning if absent so this
-    # build script can iterate before the PDF is finalized.
+    # Required bilingual PDF help file, generated locally (Pandoc + Edge
+    # headless print-to-pdf) and dropped at the path below. It is verified
+    # before the copy and compared byte for byte afterwards, because the
+    # shipped copy is what readers actually get.
     $pdfName = "巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf"
     $pdfSrc = Join-Path $releaseDocsDir $pdfName
-    if (Test-Path -LiteralPath $pdfSrc) {
-        Copy-Item -LiteralPath $pdfSrc -Destination (Join-Path $StageRoot $pdfName) -Force
-    } else {
-        Write-Warning ("PDF user guide not found at {0} — top-level PDF will be missing from zip." -f $pdfSrc)
+    if (-not (Test-Path -LiteralPath $pdfSrc)) {
+        throw "Missing PDF user guide: $pdfSrc"
     }
+    Assert-PdfUserGuideSafe -PdfPath $pdfSrc -AppRoot $AppRoot
+    $pdfDest = Join-Path $StageRoot $pdfName
+    Copy-Item -LiteralPath $pdfSrc -Destination $pdfDest -Force
+    $srcHash = (Get-FileHash -LiteralPath $pdfSrc -Algorithm SHA256).Hash
+    $destHash = (Get-FileHash -LiteralPath $pdfDest -Algorithm SHA256).Hash
+    if ($srcHash -ne $destHash) {
+        throw ("Staged PDF user guide differs from source ({0} vs {1})." -f $srcHash, $destHash)
+    }
+    Assert-PdfUserGuideSafe -PdfPath $pdfDest -AppRoot $AppRoot
 
     Remove-StagedDebris -Root $StageRoot
     Assert-StagedStylePreviewsMatchGit -AppDest $appDest

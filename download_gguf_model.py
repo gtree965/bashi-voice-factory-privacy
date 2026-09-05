@@ -1,7 +1,7 @@
 """Download and verify the Bashi GGUF runtime model pack.
 
 Primary source: ModelScope repository containing model-custom/manifest.json.
-Fallback source: a manually supplied zip URL, for example Files.fm.
+Fallback source: a manually supplied zip URL.
 
 This script is intentionally dependency-free so it can run inside the portable
 package before optional helper packages are installed.

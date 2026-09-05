@@ -11,6 +11,7 @@
 | **v0.1.1** | NVIDIA CUDA dual-backend (Windows) | Released 2026-06 | shipped |
 | **v0.1.2** | NVIDIA detection and backend robustness (Windows) | Released 2026-06-15 | shipped |
 | **v0.1.3** | Windows reliability, logging, streaming UX, and STT quality/safety | Released 2026-08-03 | shipped |
+| **v0.1.4** | Startup warmup, PDF user-guide fix and build guard, Gitee mirror | Released 2026-09 | shipped |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -191,6 +192,15 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 
 ---
 
+## v0.1.4 — Warmup, user-guide fix, and Gitee mirror (Windows patch, shipped 2026-09)
+
+- Asynchronous full-path TTS warmup on UI load (see above).
+- **PDF user guide repaired.** Releases v0.1.1-v0.1.3 shipped a manual whose internal `LICENSE` / `VERSION` links had been baked into absolute paths on the build machine, leaving every reader with dead links. The v0.1.4 manual carries only public HTTPS addresses.
+- **Build-time guard added.** `Assert-PdfUserGuideSafe` parses the finished PDF with a pinned parser and refuses to package a guide containing any non-HTTPS link (the sole exception being the author contact `mailto:`). Packaging fails closed if the parser is unavailable.
+- **Gitee mirror.** Source and downloads are now also published at <https://gitee.com/gtree965/> for users in mainland China. GitHub remains the only issue tracker.
+
+---
+
 ## v0.2.0 — Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian
 
 **Goal**: Match Speed Edition's three-OS coverage (Windows + macOS + Linux) with unified backend story: GGUF runtime + platform-native accelerator.
@@ -316,7 +326,7 @@ Given the scope, v0.4 is a more honest target than v0.3.
 
 ## Beyond v0.3 (idea pool, not committed)
 
-- **Manual update check UX improvements** (NOT auto-updater): things like a one-click "copy changelog URL" button, version-string comparison helper when user manually pastes the latest version number, picking which of GitHub Releases / files.fm to open. Strictly user-initiated; no background polling of any kind. (Earlier draft mentioned an "in-app notification badge" — dropped per Finding 4, since badges imply background checking which conflicts with the v0.1 privacy posture.)
+- **Manual update check UX improvements** (NOT auto-updater): things like a one-click "copy changelog URL" button, version-string comparison helper when user manually pastes the latest version number, picking which of GitHub Releases / Gitee to open. Strictly user-initiated; no background polling of any kind. (Earlier draft mentioned an "in-app notification badge" — dropped per Finding 4, since badges imply background checking which conflicts with the v0.1 privacy posture.)
 - **Optional Qwen3-ASR** as third STT engine (if v0.2's evaluation shows it's worth the size + speed cost)
 - **Web app version** (no installer, runs in browser via WebGPU + WASM ggml — speculative, depends on llama.cpp WASM maturity)
 - **Linux NVIDIA-CUDA-only variant** specifically optimized for headless server deployments (no UI deps, REST API only)
@@ -344,4 +354,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-08-03 (v0.1.3 reliability, streaming UX, and STT quality/safety patch shipped). Next review: before v0.1.4 STT correction expansion or v0.2 cross-platform work.*
+*Last updated: 2026-09 (v0.1.4 warmup, user-guide fix, and Gitee mirror shipped). Next review: before v0.2 cross-platform work.*

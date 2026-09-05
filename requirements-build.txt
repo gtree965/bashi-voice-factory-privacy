@@ -1,0 +1,4 @@
+# Build-time only. Not required to run the app; do not merge into requirements.txt.
+# Used by scripts/check_pdf_links.py, which build_portable_zip.ps1 runs as a
+# release gate over the bundled PDF user guide.
+pypdf==6.1.1

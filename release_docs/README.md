@@ -3,11 +3,11 @@
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**Version:** 0.1.3
+**Version:** 0.1.4
 
 A fully offline desktop web app for high-quality text-to-speech and speech-to-text. After the one-time first-launch download, **everything runs on your own machine** — TTS synthesis, audio export, transcription, and storage. No audio data ever leaves your computer.
 
@@ -15,18 +15,17 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 **Author:** Alex Li (ncorecpu@gmail.com)
 **License:** [MIT License](LICENSE)
-**Source code:** <https://github.com/gtree965/bashi-voice-factory-privacy>
-**Download:** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [files.fm mirror](https://files.fm/u/juvstxmrez)
+**Source code:** <https://github.com/gtree965/bashi-voice-factory-privacy> · <https://gitee.com/gtree965/bashi-voice-factory-privacy> (mirror for mainland China)
+**Download:** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [Gitee](https://gitee.com/gtree965/) (recommended in mainland China)
 
 ---
 
-## 🆕 What's New in v0.1.3
+## 🆕 What's New in v0.1.4
 
-- **Safer STT defaults:** SenseVoice Small is now the default multilingual STT model, the Speaker ID UI is disabled, and Paraformer Chinese Large has been removed from the product.
-- **Upload and job-state hardening:** a server-side upload ceiling (2 GB by default) rejects oversized requests, and shared `stt_jobs` state is now lock-protected across background work and API reads.
-- **Reliable streaming:** affected frontend SSE readers now buffer data across network chunks, preventing split JSON lines or frames from being dropped or misparsed.
-- **Responsive streaming synthesis:** stop long or chunked synthesis at any time without losing completed chunks; they remain playable and individually downloadable. In Shadowing Mode, playback starts when the first chunk is ready by default (this can be disabled) and waits for later chunks instead of stopping early.
-- **Listen while long text is generated:** GGUF long-form synthesis now previews the first ready audio group and continues seamlessly as later groups arrive, with mute and adaptive buffering controls. The complete seekable/downloadable MP3 still appears when merging finishes, without interrupting an active preview.
+- **Faster first synthesis:** full-path TTS warmup now starts asynchronously when the UI loads, using a throwaway synthesis rather than model loading alone. The UI shows a neutral warming state; an early request waits for warmup instead of failing.
+- **Fixed the PDF user guide:** the bundled manual no longer carries broken internal links that pointed at directories on the build machine. All links in the manual are now public HTTPS addresses.
+- **Build-time guard:** packaging now refuses to ship a user guide containing any non-HTTPS link, so this class of defect cannot recur.
+- **Gitee mirror:** source and downloads are now also served from Gitee for users in mainland China.
 
 ---
 
@@ -98,7 +97,7 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 **Manual update check** (user-initiated only, never automatic): the UI footer "Check for updates" button opens a release page in a new browser tab. You can also check manually anytime at:
 
 - GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
-- files.fm mirror: <https://files.fm/u/juvstxmrez>
+- Gitee: <https://gitee.com/gtree965/>
 
 **Air-gapped / sensitive deployment** (banks, healthcare, government, internal corporate networks): after first-launch downloads complete on a connected machine, the entire `bashi-voice-factory-privacy-v0.x.0/` extracted folder can be copied to an offline / physically-isolated machine and run with zero further network access required. The app has no telemetry endpoints to firewall, no auto-update worker, no callback URLs. To verify, monitor outbound traffic with Wireshark / Resource Monitor during a normal session — it should be silent.
 
@@ -152,7 +151,7 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from GitHub Releases or the files.fm mirror; the BOM bug was fixed in v0.1.0 final |
+| `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from GitHub Releases or Gitee; the BOM bug was fixed in v0.1.0 final |
 | pip install stops mid-way after WiFi blip | Retry triggers automatically (3 attempts, 5s/30s/120s backoff). If all 3 fail, fix network and re-run the launcher — pip caches what's already installed |
 | pip install fails with a "long path support" message | Run the registry one-liner from the launcher's advisory in an Administrator PowerShell, then re-launch |
 | pip install fails on every mirror, or a mirror refuses your IP (`403` / `denied by IP ACL`) | The launcher already retries Aliyun → Tsinghua → PyPI. To force one index, set `BASHI_PIP_INDEX_URL` before launching, e.g. `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
@@ -168,7 +167,7 @@ Full log paths: `bashi-privacy-app\app.log` and `bashi-privacy-app\launch_log.tx
 ## 📦 What's in the Zip
 
 ```
-bashi-voice-factory-privacy-v0.1.3/
+bashi-voice-factory-privacy-v0.1.4/
 ├── Start_启动.bat                                       ← double-click here
 ├── Start_CPU_only_仅CPU启动.bat                         ← force CPU mode (entry-level iGPU A/B)
 ├── README.md                                            ← this file

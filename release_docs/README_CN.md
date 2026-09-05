@@ -3,11 +3,11 @@
 # 巴适声工厂 · 隐私版 (Bashi Voice Factory Privacy Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**版本：** 0.1.3
+**版本：** 0.1.4
 
 完全离线运行的本地语音工厂网页应用。首次启动联网下载完依赖与模型之后，**所有文字转语音、语音转文字、音频生成、文件保存都在你自己的电脑上完成**，没有任何音频数据上传云端。
 
@@ -15,18 +15,17 @@
 
 **作者：** Alex Li (ncorecpu@gmail.com)
 **许可：** [MIT License](LICENSE)
-**源码：** <https://github.com/gtree965/bashi-voice-factory-privacy>
-**下载：** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [files.fm 镜像](https://files.fm/u/juvstxmrez)
+**源码：** <https://github.com/gtree965/bashi-voice-factory-privacy> · <https://gitee.com/gtree965/bashi-voice-factory-privacy>（国内镜像）
+**下载：** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [Gitee](https://gitee.com/gtree965/)（国内推荐）
 
 ---
 
-## 🆕 v0.1.3 更新内容
+## 🆕 v0.1.4 更新内容
 
-- **更稳妥的 STT 默认方案：** SenseVoice Small 现为默认多语种 STT 模型，Speaker ID 界面已停用，并从产品中移除了 Paraformer 中文大模型。
-- **上传与任务状态加固：** 新增服务端上传硬上限（默认 2 GB），并为共享 `stt_jobs` 状态加入线程锁，覆盖后台任务与 API 读取路径。
-- **更可靠的流式处理：** 受影响的前端 SSE 读取器现在会跨网络 chunk 缓冲数据，避免被拆开的 JSON 行或事件帧丢失、误解析。
-- **更顺手的流式合成：** 长文或跟读片段合成可随时停止，已生成片段不会丢失，仍可逐段播放和下载。跟读模式默认在首个片段生成后自动开始播放（可关闭），播放追上合成时会等待后续片段，不再提前停住。
-- **长文边合成边试听：** GGUF 长文现在会在首组音频就绪后开始试听，并随后续组自动接续；支持静音试听与慢机自适应缓冲。合并完成后仍提供可拖动、可下载的完整 MP3，且不会打断正在进行的试听。
+- **首次合成更快：** 界面加载时即异步预热完整 TTS 链路，用一次丢弃式合成代替单纯加载模型。界面显示中性的预热状态；预热期间的早到请求会等待，而不是直接失败。
+- **修复 PDF 使用手册：** 随包分发的手册不再带有指向构建机器本地目录的失效内链，手册内所有链接均为公开 HTTPS 地址。
+- **构建期门禁：** 打包时若手册中存在任何非 HTTPS 链接即拒绝出包，杜绝此类缺陷复发。
+- **Gitee 镜像：** 源码与下载新增 Gitee 入口，方便中国大陆用户访问。
 
 ---
 
@@ -98,7 +97,7 @@
 **手动更新检查**（仅用户主动触发，永不自动）：UI 右下角"查看最新版本"按钮在新浏览器标签页打开发布页。也可以随时手动访问：
 
 - GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
-- files.fm 镜像: <https://files.fm/u/juvstxmrez>
+- Gitee: <https://gitee.com/gtree965/>
 
 **离网 / 敏感场景部署**（银行、医疗、政务、企业内网）：在联网机器上完成首次启动的所有下载后，整个 `bashi-voice-factory-privacy-v0.x.0/` 解压文件夹可以原样拷贝到离网/物理隔离机器上运行，之后所有功能均无需任何网络访问。程序没有任何遥测端点需要防火墙拦截，没有自动更新守护进程，也没有回调 URL。可用 Wireshark / 资源监视器在正常使用过程中监测出站流量验证 — 应当全程静默。
 
@@ -152,7 +151,7 @@
 
 | 现象 | 可能原因 / 处理 |
 |---|---|
-| 双击 `Start_启动.bat` 报 "Array index expression is missing" | 旧版 zip。请从 GitHub Releases 或 files.fm 镜像重新下载最新版；该 BOM 问题在 v0.1.0 正式版已修复 |
+| 双击 `Start_启动.bat` 报 "Array index expression is missing" | 旧版 zip。请从 GitHub Releases 或 Gitee 重新下载最新版；该 BOM 问题在 v0.1.0 正式版已修复 |
 | pip 安装途中 WiFi 闪断后中止 | 自动重试 3 次（5/30/120 秒退避）。3 次都失败时，修好网络后重新运行启动器即可（pip 会跳过已装好的包） |
 | pip 安装失败并提示 "long path support" | 按启动器提示，在管理员 PowerShell 中运行一次注册表命令，然后重新启动 |
 | 所有镜像都装不上，或镜像拒绝本机 IP（`403` / `denied by IP ACL`） | 启动器已按阿里云 → 清华 → PyPI 自动换源。若要指定某一个源，启动前设置 `BASHI_PIP_INDEX_URL`，例如 `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
@@ -168,7 +167,7 @@
 ## 📦 zip 包目录结构
 
 ```
-bashi-voice-factory-privacy-v0.1.3/
+bashi-voice-factory-privacy-v0.1.4/
 ├── Start_启动.bat                                       ← 双击这里
 ├── Start_CPU_only_仅CPU启动.bat                         ← 强制 CPU 模式（入门集显 A/B 对比用）
 ├── README.md                                            ← 英文文档

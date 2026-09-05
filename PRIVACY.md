@@ -16,9 +16,9 @@ Bashi Voice Factory Privacy Edition is designed as a local desktop web app. User
 
 First launch usually takes about 15-25 minutes, depending on network speed. After these first-time downloads complete, the app runs offline. TTS inference, audio generation, and file saving happen locally.
 
-**唯一的运行时网络行为**：UI “查看最新版本” 按钮，由用户主动点击时跳转到 `https://files.fm/u/juvstxmrez`。软件本身不自动联网检查更新、不上传任何使用数据。
+**唯一的运行时网络行为**：UI “查看最新版本” 按钮，由用户主动点击时跳转到 `https://gitee.com/gtree965/`。软件本身不自动联网检查更新、不上传任何使用数据。
 
-The only runtime network action is the user-initiated "Check for updates" button, which opens `https://files.fm/u/juvstxmrez`. The app does not automatically check for updates and does not upload usage data.
+The only runtime network action is the user-initiated "Check for updates" button, which opens `https://gitee.com/gtree965/`. The app does not automatically check for updates and does not upload usage data.
 
 ## 本机数据 / Local Data
 
