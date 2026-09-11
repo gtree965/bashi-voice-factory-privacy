@@ -66,7 +66,8 @@ class GuardTests(unittest.TestCase):
         self.assertIn("ordinary.txt", guard.ignored_paths(self.root, ["ordinary.txt"]))
 
     def test_added_residue_is_blocked(self):
-        for word in ("ChatGPT", "Claude", "DeepSeek", "OneDrive", "scratchpad",
+        for word in ("ChatGPT", "Claude", "DeepSeek", "CodeBuddy", "Qoder",
+                     "OneDrive", "scratchpad",
                      r"C:\Users\example\data", r"C:\Temp\data",
                      "files.fm", "markdownpanel-virtualhost",
                      "01234567-89ab-cdef-0123-456789abcdef"):
@@ -242,7 +243,8 @@ class MessageTests(unittest.TestCase):
                 self.assertTrue(any("trailer" in issue.lower() for issue in self.check(text)))
 
     def test_agent_name_in_subject_or_body_is_blocked(self):
-        for name in ("ChatGPT", "Claude", "Codex", "DeepSeek", "Gemini", "OpenAI"):
+        for name in ("ChatGPT", "Claude", "Codex", "DeepSeek", "CodeBuddy", "Qoder",
+                     "Gemini", "OpenAI"):
             with self.subTest(name=name):
                 for text in (f"{name}: tidy the docs\n",
                              f"build: tidy the docs\n\n{name}\n"):
@@ -263,6 +265,246 @@ class MessageTests(unittest.TestCase):
 
     def test_product_model_name_passes(self):
         self.assertEqual(self.check("docs: describe Qwen3-TTS support\n"), [])
+
+
+class PrePushTests(unittest.TestCase):
+    """Publish-time gating, exercised against a throwaway local remote.
+
+    The disposable repositories set no ``core.hooksPath``, so the real pushes
+    below only establish remote-tracking references; the guard itself is called
+    directly with the records Git would hand a pre-push hook.
+    """
+
+    ZERO = "0" * 40
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.root = self.base / "work"
+        self.remote = self.base / "remote.git"
+        self.base.mkdir(parents=True, exist_ok=True)
+        self.git_run("init", "-q", "--initial-branch=main", str(self.root), cwd=self.base)
+        self.git_run("init", "-q", "--bare", str(self.remote), cwd=self.base)
+        self.git("config", "user.name", "Alex Li")
+        self.git("config", "user.email", "ncorecpu@gmail.com")
+        self.git("config", "core.autocrlf", "false")
+        self.git("config", "commit.gpgsign", "false")
+        self.git("remote", "add", "origin", self.remote.as_uri())
+        self.terms = self.root / ".git/info/bashi-sensitive-terms.txt"
+        self.terms.write_text("# Synthetic entries only\nPRIVATE_SENTINEL_9X\n", encoding="utf-8")
+
+    def git_run(self, *args, cwd=None, env=None):
+        environment = {k: v for k, v in os.environ.items()
+                       if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
+        if env:
+            environment.update(env)
+        return subprocess.run(["git", *args], cwd=str(cwd or self.root),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
+
+    def git(self, *args, **kwargs):
+        result = self.git_run(*args, **kwargs)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+        return result
+
+    def commit(self, name, content, *message, env=None):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+        self.git("add", "--", name)
+        args = ["commit", "-q"]
+        for part in message:
+            args.extend(("-m", part))
+        self.git(*args, env=env)
+        return self.git("rev-parse", "HEAD").stdout.strip().decode()
+
+    def publish(self):
+        return self.git("push", "-q", "origin", "refs/heads/main:refs/heads/main")
+
+    def baseline(self):
+        """A commit that is genuinely on the remote before the case under test."""
+        sha = self.commit("baseline.txt", "published content\n", "build: baseline")
+        self.publish()
+        return sha
+
+    def records(self, local_sha, local_ref="refs/heads/main", remote_sha=None,
+                remote_ref=None):
+        return [(local_ref, local_sha, remote_ref or local_ref,
+                 self.ZERO if remote_sha is None else remote_sha)]
+
+    def check(self, records):
+        return guard.check_pre_push(self.root, records, self.terms)
+
+    def test_clean_commit_on_a_published_baseline_passes(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: ordinary")
+        self.assertEqual(self.check(self.records(head, remote_sha=base)), [])
+
+    def test_comment_line_in_a_pushed_message_is_blocked(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: tidy", "# DeepSeek was here")
+        self.assertIn("# DeepSeek", self.git("log", "-1", "--format=%B").stdout.decode())
+        self.assertTrue(any("message" in issue for issue in
+                            self.check(self.records(head, remote_sha=base))))
+
+    def test_attribution_trailer_and_new_agent_names_are_blocked(self):
+        base = self.baseline()
+        for index, text in enumerate(("Co-Authored-By: Someone <someone@example.invalid>",
+                                      "summarised by CodeBuddy",
+                                      "drafted with Qoder")):
+            with self.subTest(text=text):
+                head = self.commit(f"work-{index}.txt", "ordinary\n", "build: tidy", text)
+                self.assertTrue(self.check(self.records(head, remote_sha=base)))
+
+    def test_unexpected_author_is_blocked(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: tidy",
+                           env={"GIT_AUTHOR_NAME": "Someone"})
+        self.assertTrue(any("author" in issue for issue in
+                            self.check(self.records(head, remote_sha=base))))
+
+    def test_unexpected_committer_is_blocked(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: tidy",
+                           env={"GIT_COMMITTER_EMAIL": "someone@example.invalid"})
+        self.assertTrue(any("committer" in issue for issue in
+                            self.check(self.records(head, remote_sha=base))))
+
+    def test_residue_in_a_new_file_is_blocked(self):
+        base = self.baseline()
+        head = self.commit("notes.txt", "ChatGPT wrote this\n", "build: notes")
+        self.assertTrue(any("residue" in issue for issue in
+                            self.check(self.records(head, remote_sha=base))))
+
+    def test_residue_in_an_allowlisted_file_passes(self):
+        base = self.baseline()
+        head = self.commit("scripts/check_pdf_links.py", "ChatGPT\n", "build: pattern")
+        self.assertEqual(self.check(self.records(head, remote_sha=base)), [])
+
+    def test_sensitive_term_is_blocked_without_echoing_it(self):
+        base = self.baseline()
+        head = self.commit("notes.txt", "PRIVATE_SENTINEL_9X\n", "build: notes")
+        issues = self.check(self.records(head, remote_sha=base))
+        self.assertTrue(any("sensitive" in issue for issue in issues))
+        self.assertNotIn("private_sentinel_9x", str(issues).lower())
+        self.publish()
+        head2 = self.commit("other.txt", "ordinary\n", "build: PRIVATE_SENTINEL_9X")
+        issues = self.check(self.records(head2, remote_sha=head))
+        self.assertTrue(any("sensitive" in issue for issue in issues))
+        self.assertNotIn("private_sentinel_9x", str(issues).lower())
+
+    def test_added_then_removed_sensitive_line_is_still_blocked(self):
+        base = self.baseline()
+        first = self.commit("notes.txt", "PRIVATE_SENTINEL_9X\n", "build: add")
+        second = self.commit("notes.txt", "ordinary\n", "build: remove")
+        issues = self.check(self.records(second, remote_sha=base))
+        self.assertTrue(any("sensitive" in issue for issue in issues))
+        self.assertTrue(any(first[:8] in issue for issue in issues))
+        self.assertNotIn("private_sentinel_9x", str(issues).lower())
+
+    def test_published_residue_does_not_block_a_later_push(self):
+        base = self.commit("old.txt", "ChatGPT legacy line\n", "build: legacy")
+        self.publish()
+        head = self.commit("new.txt", "ordinary\n", "build: new")
+        self.assertEqual(self.check(self.records(head, remote_sha=base)), [])
+
+    def test_new_branch_scans_only_unpublished_commits(self):
+        self.commit("old.txt", "ChatGPT legacy line\n", "build: legacy")
+        self.publish()
+        head = self.commit("new.txt", "ordinary\n", "build: new")
+        self.git("branch", "topic")
+        self.assertEqual(
+            self.check(self.records(head, "refs/heads/topic",
+                                    remote_ref="refs/heads/topic")), [])
+
+    def test_deletion_publishes_nothing(self):
+        base = self.baseline()
+        self.commit("notes.txt", "ChatGPT\n", "build: notes")
+        records = [("refs/heads/gone", self.ZERO, "refs/heads/gone", base)]
+        self.assertEqual(self.check(records), [])
+
+    def test_annotated_tag_message_is_blocked(self):
+        base = self.baseline()
+        self.git("tag", "-a", "probe-tag", "-m", "release notes by Codex", base)
+        sha = self.git("rev-parse", "probe-tag").stdout.strip().decode()
+        self.assertEqual(self.git("cat-file", "-t", sha).stdout.strip(), b"tag")
+        self.assertTrue(any("tag" in issue for issue in
+                            self.check(self.records(sha, "refs/tags/probe-tag",
+                                                    remote_ref="refs/tags/probe-tag"))))
+
+    def test_annotated_tag_tagger_is_blocked(self):
+        base = self.baseline()
+        self.git("tag", "-a", "probe-tag", "-m", "ordinary release notes", base,
+                 env={"GIT_COMMITTER_NAME": "Someone"})
+        sha = self.git("rev-parse", "probe-tag").stdout.strip().decode()
+        self.assertTrue(any("tagger" in issue for issue in
+                            self.check(self.records(sha, "refs/tags/probe-tag",
+                                                    remote_ref="refs/tags/probe-tag"))))
+
+    def test_lightweight_tag_on_a_published_commit_passes(self):
+        base = self.baseline()
+        self.git("tag", "probe-lw", base)
+        sha = self.git("rev-parse", "probe-lw").stdout.strip().decode()
+        self.assertEqual(self.git("cat-file", "-t", sha).stdout.strip(), b"commit")
+        self.assertEqual(self.check(self.records(sha, "refs/tags/probe-lw",
+                                                 remote_ref="refs/tags/probe-lw")), [])
+
+    def test_forced_ignored_path_in_a_commit_is_blocked(self):
+        base = self.baseline()
+        self.commit(".gitignore", "local-only/\n", "build: ignore")
+        path = self.root / "local-only/private.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("ordinary\n", encoding="utf-8")
+        self.git("add", "-f", "--", "local-only/private.txt")
+        self.git("commit", "-q", "-m", "build: forced")
+        head = self.git("rev-parse", "HEAD").stdout.strip().decode()
+        self.assertTrue(any("Ignored" in issue for issue in
+                            self.check(self.records(head, remote_sha=base))))
+
+    def test_binary_residue_in_a_commit_is_blocked(self):
+        base = self.baseline()
+        head = self.commit("payload.bin", b"\x00prefix ChatGPT suffix", "build: payload")
+        self.assertTrue(any("binary" in issue for issue in
+                            self.check(self.records(head, remote_sha=base))))
+
+    def test_merge_commit_is_read_from_its_first_parent(self):
+        base = self.baseline()
+        self.git("checkout", "-q", "-b", "side")
+        self.commit("side.txt", "ordinary side\n", "build: side")
+        self.git("checkout", "-q", "main")
+        self.commit("main.txt", "ordinary main\n", "build: main")
+        self.git("merge", "-q", "--no-ff", "-m", "build: merge", "side")
+        head = self.git("rev-parse", "HEAD").stdout.strip().decode()
+        self.assertTrue(self.git("show", "-s", "--format=%P", head).stdout.strip().count(b" "))
+        self.assertEqual(self.check(self.records(head, remote_sha=base)), [])
+
+    def test_missing_terms_fail_closed(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: ordinary")
+        self.terms.unlink()
+        with self.assertRaisesRegex(guard.GuardError, "Restore"):
+            self.check(self.records(head, remote_sha=base))
+
+    def test_unparsable_push_input_is_refused(self):
+        with self.assertRaisesRegex(guard.GuardError, "pre-push"):
+            guard.read_push_records("refs/heads/main only-three-fields\n")
+
+    def test_cli_exit_codes(self):
+        base = self.baseline()
+        clean = self.commit("clean.txt", "ordinary\n", "build: ordinary")
+        cli = [sys.executable, str(ROOT / "scripts/git-hooks/pre_commit_guard.py"),
+               "--pre-push", "origin", "https://example.invalid/repo.git"]
+        env = {**os.environ, guard.TERMS_ENV: str(self.terms)}
+        line = f"refs/heads/main {clean} refs/heads/main {base}\n"
+        allowed = subprocess.run(cli, cwd=self.root, input=line.encode(),
+                                 capture_output=True, env=env)
+        self.assertEqual(allowed.returncode, 0)
+        dirty = self.commit("dirty.txt", "ChatGPT\n", "build: dirty")
+        line = f"refs/heads/main {dirty} refs/heads/main {clean}\n"
+        blocked = subprocess.run(cli, cwd=self.root, input=line.encode(),
+                                 capture_output=True, env=env)
+        self.assertEqual(blocked.returncode, 1)
+        self.assertIn(b"residue", blocked.stderr)
 
 
 class PatternTests(unittest.TestCase):

@@ -60,8 +60,9 @@ FORBIDDEN = re.compile("|".join((
 
 # Agent names the commit guard blocks in addition to the ones above. Kept out of
 # FORBIDDEN deliberately, so the release gate's pattern stays byte-identical, and
-# registered here so the guard module itself never spells the name literally.
-COMMIT_GUARD_EXTRA_AI_NAMES = r"deepseek"
+# registered here so the guard module itself never spells the names literally.
+# The product's own model name (Qwen) must never be added to this pattern.
+COMMIT_GUARD_EXTRA_AI_NAMES = r"deepseek|codebuddy|qoder"
 
 
 def uri_is_allowed(uri: str) -> bool:
