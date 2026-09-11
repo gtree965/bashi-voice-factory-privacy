@@ -42,19 +42,26 @@ ALLOWED_MAILTO = "mailto:ncorecpu@gmail.com"
 # backslash-separated Windows paths slipped past an earlier version of this gate.
 _SEP = "[" + chr(92) + chr(92) + "/]"
 
-FORBIDDEN = re.compile(
-    "file:"
-    "|[A-Za-z]:" + _SEP + "{1,2}Users" + _SEP
-    + "|/home/[a-z]|/Users/[A-Za-z]"
-    + "|OneDrive|scratchpad"
-    + "|" + _SEP + "Temp" + _SEP
-    + "|[A-Za-z]:" + _SEP + "{1,2}tmp" + _SEP
-    + "|" + _SEP + "tmp" + _SEP
-    + r"|markdownpanel-virtualhost|files\.fm"
-    + r"|claude|codex|anthropic|chatgpt|openai|gemini|copilot(?!\+)"
-    + r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    re.IGNORECASE,
-)
+WINDOWS_USER_PATH = "[A-Za-z]:" + _SEP + "{1,2}Users" + _SEP
+SHARED_MACHINE_RESIDUE = "OneDrive|scratchpad|" + _SEP + "Temp" + _SEP
+MACHINE_RESIDUE = "|".join((
+    WINDOWS_USER_PATH,
+    "/home/[a-z]|/Users/[A-Za-z]",
+    SHARED_MACHINE_RESIDUE,
+    "[A-Za-z]:" + _SEP + "{1,2}tmp" + _SEP,
+    _SEP + "tmp" + _SEP,
+))
+RETIRED_HOSTS = r"markdownpanel-virtualhost|files\.fm"
+AI_TOOL_NAMES = r"claude|codex|anthropic|chatgpt|openai|gemini|copilot(?!\+)"
+SESSION_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+FORBIDDEN = re.compile("|".join((
+    "file:", MACHINE_RESIDUE, RETIRED_HOSTS, AI_TOOL_NAMES, SESSION_UUID,
+)), re.IGNORECASE)
+
+# Agent names the commit guard blocks in addition to the ones above. Kept out of
+# FORBIDDEN deliberately, so the release gate's pattern stays byte-identical, and
+# registered here so the guard module itself never spells the name literally.
+COMMIT_GUARD_EXTRA_AI_NAMES = r"deepseek"
 
 
 def uri_is_allowed(uri: str) -> bool:

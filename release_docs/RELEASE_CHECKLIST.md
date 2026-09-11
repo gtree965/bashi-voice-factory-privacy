@@ -2,6 +2,12 @@
 
 Use this checklist for every tagged release.
 
+- [ ] Verify this clone's commit guard before every release:
+  `git config --local core.hooksPath` must print `scripts/git-hooks`, and
+  `$(git rev-parse --git-dir)/info/bashi-sensitive-terms.txt` must contain the
+  locally maintained, untracked term list. On a new clone, restore that file from
+  the local backup, then run `git config --local core.hooksPath scripts/git-hooks`
+  once. The guard rejects a missing or empty list; never commit the list itself.
 - Update `VERSION` and the matching release status in `ROADMAP.md`.
 - Update the changelog and version references in both root and packaged READMEs:
   - `README.md` must match `release_docs/README.md`.
