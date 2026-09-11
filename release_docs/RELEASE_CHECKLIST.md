@@ -99,3 +99,18 @@ Use this checklist for every tagged release.
     accidental commits; it grants nothing and proves nothing about permission to use the material.
 - Run `python -m pytest tests` and require the full project suite to pass.
 - Commit the release files, create the annotated version tag, push `main` and the tag, then verify the remote SHAs.
+- [ ] Verify that the Gitee mirror has synchronized the latest tag: sorted
+  `git ls-remote --heads --tags` output must match GitHub line for line.
+- [ ] Create the matching Gitee release and upload every GitHub attachment, including
+  `.sha256` sidecars. Download each attachment anonymously and verify its byte count
+  and SHA256 against the GitHub asset.
+
+  Checksum sidecars use CRLF line endings. Git-for-Windows `sha256sum -c` can treat
+  the trailing CR as part of the filename and report file-not-found. Normalize only
+  the verification input, from the directory containing the downloaded ZIP:
+
+  ```sh
+  tr -d '\r' < PACKAGE.zip.sha256 | sha256sum --check -
+  ```
+
+  Do not change already published bytes to work around this tool behavior.

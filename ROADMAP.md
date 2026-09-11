@@ -32,6 +32,13 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
   - 📊 Calibrated timelines: v0.1.1 1-2 weeks → ~1 week. v0.2 4-6 weeks → 3-4 weeks. v0.3-α 4-6 weeks → 6+ weeks (or much more if decoder refactor needed).
   - 🔀 Priority swap: v0.3.0 should ship ARM64 Windows native (β) BEFORE NPU (α). ARM64 is standard engineering; NPU is gated by intensive ML refactor.
 - **2026-05-26 (later same day)**: v0.1.1 distribution shape locked as **Option C (Vulkan main zip + user-triggered CUDA add-on download)** after the universal-zip size measurement made Option A unattractive and Option B's "two zips on the release page" risked non-technical Chinese users picking the wrong one. Option C reuses the existing JIT-download infrastructure (parallel to GGUF model download), preserves the zero-auto-network privacy posture, and pays the ~600 MiB compressed add-on cost only for users who actually benefit. ModelScope add-on repo: `gtree592/bashi-qwen3-tts-cuda-runtime` with `win-x64/` subdirectory.
+- **2026-08-29**: Local TTS model composition locked — **both Base and CustomVoice ship**.
+  - ✅ Decided: **Base** is the upload-audio cloning engine. **CustomVoice** provides the nine preset voices, the Beijing/Sichuan dialect routing, and native `instruct`. **VoiceDesign** remains an optional component.
+  - 📊 Measured (deduplicated by content hash across the exported artifact set): the two TTS cores total **4,371,379,728 B (4.071 GiB)**. Including the codec and speaker encoders that Base requires for upload cloning, the full set is **4,510,026,737 B (4.200 GiB)**.
+  - ❌ Rejected: a single-model variant (CustomVoice only, borrowing Base's two encoders) would have saved **2,064,918,496 B (1.923 GiB)**. In a pre-registered blind A/B listening test using held-out human reference recordings, Base's clones were preferred for speaker identity on all 21 formal trials. A secondary encoder-based identity proxy, computed only after the listening responses were sealed, agreed in direction.
+  - ⚠️ That listening test had a **single listener**. The single-model variant will only be reconsidered if a second listener overturns the result on the same frozen exports and runtime.
+  - ⚠️ Caught: an earlier plan assumed Base alone could serve the nine preset voices and the two dialects through its deterministic speaker table. It cannot — the upstream Base model declares an empty speaker set and no dialect language IDs, and the corresponding embedding rows are untrained. The two failures have different mechanisms: preset-voice calls silently inject untrained speaker rows; dialect calls silently index absent or untrained language-token rows. Both can return audio rather than raising an error.
+  - ⚠️ Scope: these figures and conclusions apply to the currently verified exports and runtime build. They are not a general capability claim about other model versions or future exports; generation output is reproducible only within a fixed runtime build.
 
 ---
 
@@ -354,4 +361,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-09 (v0.1.4 warmup, user-guide fix, and Gitee mirror shipped). Next review: before v0.2 cross-platform work.*
+*Last updated: 2026-09 (v0.1.4 warmup, user-guide fix, and Gitee mirror shipped; Base + CustomVoice composition recorded). Next review: before v0.2 cross-platform work.*
