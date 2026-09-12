@@ -1,0 +1,44 @@
+[
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.0-refresh-windows.zip",
+    "entries": 199,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  },
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.0-windows.zip",
+    "entries": 199,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  },
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.1-cuda-probe-windows.zip",
+    "entries": 204,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  },
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.1-windows.zip",
+    "entries": 201,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  },
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.2-windows.zip",
+    "entries": 201,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  },
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.3-windows.zip",
+    "entries": 207,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  },
+  {
+    "archive": "bashi-voice-factory-privacy-v0.1.4-windows.zip",
+    "entries": 207,
+    "prohibited_named_paths": [],
+    "scope": "available_local_zip_names_only_not_all_historical_releases"
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "date": "2026-09-12",
+  "scope": "user-declaration-not-independent-title-verification",
+  "mp3": "All 45 previews generated using the project CustomVoice model.",
+  "images": [
+    "static/images/bashi_logo_v2.jpg",
+    "static/images/favicon.png",
+    "static/images/alipay.jpg",
+    "static/images/wechat-pay.png"
+  ],
+  "image_statement": "Created by the maintainer directly or using generative tools.",
+  "not_yet_declared": [
+    "static/images/favicon.ico"
+  ],
+  "missing": [
+    "exact generation script and seed/model/runtime hashes for original previews",
+    "image tool terms where applicable"
+  ]
+}

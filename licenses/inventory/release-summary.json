@@ -1,0 +1,25 @@
+{
+  "zip": "bashi-voice-factory-privacy-v0.1.4-windows.zip",
+  "size": 62071443,
+  "sha256": "7b81238fae2e77d4e810b6f7afbfd3fc0b3183e8cf6a3086cdb3d2588c6cf7d4",
+  "entries": 207,
+  "components": {
+    "directory": 5,
+    "bashi-code-and-docs": 47,
+    "speaker-catalog": 1,
+    "zh-confusion-data": 1,
+    "python-3.12.10-bundle": 35,
+    "style-preview-manifest": 1,
+    "style-preview-audio": 45,
+    "image-assets": 5,
+    "qwen3-tts-gguf-source": 27,
+    "llama.cpp-b7798-binaries": 38,
+    "libomp": 1,
+    "llama-source-note": 1
+  },
+  "dll": 29,
+  "exe": 20,
+  "bin_dll": 21,
+  "bin_exe": 18,
+  "bin_exe_bytes": 66450432
+}

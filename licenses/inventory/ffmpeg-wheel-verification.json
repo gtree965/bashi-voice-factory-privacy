@@ -1,0 +1,8 @@
+{
+  "wheel": "imageio_ffmpeg-0.5.0-py3-none-win_amd64.whl",
+  "source": "https://files.pythonhosted.org/packages/80/c7/5f093874612a5ccfcc2c626ae93a86dd6fce4bcad8890af1f668f9013cf3/imageio_ffmpeg-0.5.0-py3-none-win_amd64.whl",
+  "wheel_sha256": "8135f4d146094b62b31721ca53fe943f4134e3578e22015468e3df595217c24b",
+  "member": "imageio_ffmpeg/binaries/ffmpeg-win64-v4.2.2.exe",
+  "sha256": "404fdd541eecc577d8f24bf9a976f1e4209f4292022a41c01f5cc2f1b0d375ac",
+  "local_equal": true
+}

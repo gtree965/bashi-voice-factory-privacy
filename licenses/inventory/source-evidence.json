@@ -1,0 +1,291 @@
+[
+  {
+    "name": "llama-b7798-LICENSE",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b7798/LICENSE",
+    "status": 200,
+    "size": 1078,
+    "sha256": "e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d"
+  },
+  {
+    "name": "llama-b7798-release",
+    "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b7798",
+    "status": 200,
+    "size": 38606,
+    "sha256": "d57bf92fb4eb9679963372dae5681f0958ae29576d4fcf2e6dc4479e501c8d3b"
+  },
+  {
+    "name": "llama-b7798-server-cmake",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b7798/tools/server/CMakeLists.txt",
+    "status": 200,
+    "size": 1992,
+    "sha256": "b2220bba17b69a5230867ff97ab2186c1e3676fde1801995d1c7921c807e1f30"
+  },
+  {
+    "name": "llama-b7798-webui-package",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b7798/tools/server/webui/package.json",
+    "status": 200,
+    "size": 2978,
+    "sha256": "f967d743e1a90ba443cd2120ca51597bc73e6caa8136d5748feb690f6cb8fc46"
+  },
+  {
+    "name": "gguf-dc8950d-LICENSE",
+    "url": "https://raw.githubusercontent.com/HaujetZhao/Qwen3-TTS-GGUF/dc8950d/LICENSE",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "name": "gguf-dc8950d-readme",
+    "url": "https://raw.githubusercontent.com/HaujetZhao/Qwen3-TTS-GGUF/dc8950d/readme.md",
+    "status": 200,
+    "size": 8921,
+    "sha256": "5783ca6b3c9a0410f1c25771a2aff880c1259148365270853f8daeb31aee5fee"
+  },
+  {
+    "name": "cpython-3.12.10-externals",
+    "url": "https://raw.githubusercontent.com/python/cpython/v3.12.10/PCbuild/get_externals.bat",
+    "status": 200,
+    "size": 4391,
+    "sha256": "32c8c7862a6c29b72aa4ff4a0e233b4882991b1f83c391748e3b6aad60742abb"
+  },
+  {
+    "name": "llvm-14.0.6-LICENSE",
+    "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-14.0.6/openmp/LICENSE.TXT",
+    "status": 200,
+    "size": 19741,
+    "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4"
+  },
+  {
+    "name": "llvm-14.0.6-root-LICENSE",
+    "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-14.0.6/LICENSE.TXT",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "name": "openssl-3.0.16-LICENSE",
+    "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.0.16/LICENSE.txt",
+    "status": 200,
+    "size": 10175,
+    "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+  },
+  {
+    "name": "openssl-3.0.16-NOTICE",
+    "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.0.16/NOTICE.txt",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "name": "qwen-customvoice-card",
+    "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/raw/main/README.md",
+    "status": 200,
+    "size": 57846,
+    "sha256": "64f65e809b51cc0c35f393fbbfcc2d735c0cb3fdbbc6f3fdc4a5e6ce55e9d088"
+  },
+  {
+    "name": "qwen-customvoice-LICENSE",
+    "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/raw/main/LICENSE",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "name": "qwen-customvoice-metadata",
+    "url": "https://huggingface.co/api/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+    "status": 200,
+    "size": 3984,
+    "sha256": "35378b50797d3b63778c807c5abdd145806c5df4b3afe16e72594826e4b11c14"
+  },
+  {
+    "name": "parakeet-card",
+    "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2/raw/main/README.md",
+    "status": 200,
+    "size": 23599,
+    "sha256": "e2d10f955eb14a871092de134d2e82a59f494f001a181111fb95c74805763c65"
+  },
+  {
+    "name": "parakeet-converted-card",
+    "url": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/raw/main/README.md",
+    "status": 200,
+    "size": 26,
+    "sha256": "78b5ec9637b7d9bd11932027ad5a9224fd7b38b913e8b6478b8b272810cd1030"
+  },
+  {
+    "name": "sensevoice-card",
+    "url": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall/raw/main/README.md",
+    "status": 200,
+    "size": 11952,
+    "sha256": "6add90487ea3d685b6604ad0932b565fc5cf7e9daaf8aebc674de49da4560958"
+  },
+  {
+    "name": "sensevoice-converted-card",
+    "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/raw/main/README.md",
+    "status": 200,
+    "size": 104,
+    "sha256": "763991a00edaea534ab36bf1b7cf89e61e911666dcfabbba71f91f9f7c593a63"
+  },
+  {
+    "name": "silero-v4-LICENSE",
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v4.0/LICENSE",
+    "status": 200,
+    "size": 1075,
+    "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b"
+  },
+  {
+    "name": "silero-v4-model",
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v4.0/files/silero_vad.onnx",
+    "status": 200,
+    "size": 1807522,
+    "sha256": "a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28"
+  },
+  {
+    "name": "pyannote-card",
+    "url": "https://huggingface.co/pyannote/segmentation-3.0/raw/main/README.md",
+    "error": "HTTP Error 401: Unauthorized"
+  },
+  {
+    "name": "3dspeaker-LICENSE",
+    "url": "https://raw.githubusercontent.com/modelscope/3D-Speaker/main/LICENSE",
+    "status": 200,
+    "size": 11357,
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "name": "gguf-pack-manifest",
+    "url": "https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime/resolve/master/model-custom/manifest.json",
+    "status": 200,
+    "size": 5544,
+    "sha256": "123ffd39ce401487d48184caab58bd3ede1b558606b43175f8ebbc23b6f39fbd"
+  },
+  {
+    "name": "gguf-pack-readme",
+    "url": "https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime/resolve/master/model-custom/README_RUNTIME_PACK.md",
+    "status": 200,
+    "size": 720,
+    "sha256": "180f91f62e36ef3bfc629a59008e8dce26b5a255fec70dfa31856e4cd2dca391"
+  },
+  {
+    "name": "cuda-pack-manifest",
+    "url": "https://modelscope.cn/models/gtree592/bashi-qwen3-tts-cuda-runtime/resolve/master/win-x64/manifest.json",
+    "status": 200,
+    "size": 1051,
+    "sha256": "eff3c6695ca36442ba313e2f1269134a0fe16eff4e074a56050e3d43058c0775"
+  },
+  {
+    "name": "llama-b7798-bin-win-vulkan-x64.zip",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7798/llama-b7798-bin-win-vulkan-x64.zip",
+    "status": 200,
+    "size": 46432191,
+    "sha256": "d478b7070dd12a5c64478a398352e1f880d488c4c346a8f00e7051935ef6f8e8"
+  },
+  {
+    "name": "python-3.12.10-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+    "status": 200,
+    "size": 11133606,
+    "sha256": "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
+  },
+  {
+    "name": "silero-v3.1-model",
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v3.1/files/silero_vad.onnx",
+    "status": 200,
+    "size": 797513,
+    "sha256": "f87d83bb8929f0608b1b907d3f520b865758a93e34f27e78b21d69d1a9fe54ec"
+  },
+  {
+    "name": "silero-v3.1-LICENSE",
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v3.1/LICENSE",
+    "status": 200,
+    "size": 1075,
+    "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b"
+  },
+  {
+    "name": "silero-v3-model",
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v3.0/files/silero_vad.onnx",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "name": "silero-v3-LICENSE",
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v3.0/LICENSE",
+    "status": 200,
+    "size": 1075,
+    "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b"
+  },
+  {
+    "name": "sherpa-silero-model",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+    "status": 200,
+    "size": 643854,
+    "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+  },
+  {
+    "name": "sherpa-pyannote-package",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+    "status": 200,
+    "size": 6958444,
+    "sha256": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488"
+  },
+  {
+    "name": "llama-b7798-webui-lock",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b7798/tools/server/webui/package-lock.json",
+    "status": 200,
+    "size": 298278,
+    "sha256": "856dfa871956957748f5d3d21f0cbcbba61325257667751042f89d2a74615181"
+  },
+  {
+    "name": "llama-b7798-httplib-LICENSE",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b7798/vendor/cpp-httplib/LICENSE",
+    "status": 200,
+    "size": 1075,
+    "sha256": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b"
+  },
+  {
+    "name": "qwen-official-LICENSE",
+    "url": "https://raw.githubusercontent.com/QwenLM/Qwen3-TTS/main/LICENSE",
+    "status": 200,
+    "size": 11343,
+    "sha256": "a44a6081c73ad75f0255bb2bb5cab74ef1829565a895a24e53a4f11290ab7655"
+  },
+  {
+    "name": "ffmpeg-4.2.2-GPL",
+    "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/n4.2.2/COPYING.GPLv3",
+    "status": 200,
+    "size": 35147,
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  {
+    "name": "ffmpeg-legal",
+    "url": "https://ffmpeg.org/legal.html",
+    "status": 200,
+    "size": 10686,
+    "sha256": "cd51dc25f9e3200b1e3953aee036f499ed51f01f7ba30563873186cb3f870eda"
+  },
+  {
+    "name": "nvidia-cuda-12.4-eula",
+    "url": "https://docs.nvidia.com/cuda/archive/12.4.0/eula/index.html",
+    "status": 200,
+    "size": 82548,
+    "sha256": "182734e0cee7c6217b911ef88fc92c4a1f487d1003c24dd9dab1597a399fb7c5"
+  },
+  {
+    "name": "imageio-ffmpeg-0.5.0-pypi",
+    "url": "https://pypi.org/pypi/imageio-ffmpeg/0.5.0/json",
+    "status": 200,
+    "size": 7310,
+    "sha256": "56f3c76b9f143a250954110030583ea4701d6fb10a340bc8b1eafe95c2e3e379"
+  },
+  {
+    "name": "sensevoice-MODEL_LICENSE",
+    "url": "https://raw.githubusercontent.com/modelscope/FunASR/main/MODEL_LICENSE",
+    "sha256": "7dba975a2069691db4992b0592d70828b330d2f8a30a71450f4e152a554e84f8",
+    "size": 5306,
+    "status": 200
+  },
+  {
+    "name": "sensevoice-model-metadata",
+    "url": "https://huggingface.co/api/models/FunAudioLLM/SenseVoiceSmall",
+    "sha256": "c8a2f82d0ed4f583a8baf44eeeb43e5d94e0acd36a786a8ab8a4ef6cc71cdc27",
+    "size": 4624,
+    "status": 200
+  },
+  {
+    "name": "qwen-code-metadata",
+    "url": "https://api.github.com/repos/QwenLM/Qwen3-TTS/commits/main",
+    "sha256": "13a3e54955dd73f4af215aad1ebdd327fbf82529c2a9b1c61754cf3a575c373e",
+    "size": 5374,
+    "status": 200
+  }
+]

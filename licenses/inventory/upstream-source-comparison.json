@@ -1,0 +1,272 @@
+[
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/readme.md",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "readme.md",
+    "source_exists": true,
+    "sha256": "6b28f1d57d7ad09f8ad460a8b07fa266159f2b72162a27de3ab19528d7ea05cd",
+    "upstream_sha256": "5783ca6b3c9a0410f1c25771a2aff880c1259148365270853f8daeb31aee5fee",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/requirements.txt",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "requirements.txt",
+    "source_exists": true,
+    "sha256": "30b6fa3edb107a16bd45d032866fde1b0270ec397ce2ecbd3a9eb6a09a476dfa",
+    "upstream_sha256": "7a67fbf66e5f1ede3c506864ff506e36025eea0a46b780a98e14811f25ac72ff",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/__init__.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/__init__.py",
+    "source_exists": true,
+    "sha256": "b72a56af8877de03e95618a80c363727dbc4cf6e1fd1dd60a2b9c340e6556b8a",
+    "upstream_sha256": "2feb92359828046295d46cd184852e5dea6577c16dc6bce93175ddb9ae1cee62",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/assets.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/assets.py",
+    "source_exists": true,
+    "sha256": "00c07fc85f9e52f36c36c139b1c460423170e11e0a814b8bc0b45f76e1ff145a",
+    "upstream_sha256": "1f6f7e048b75225ec306d7c74128d5a383e6f6803fab8268a7558a329e24c739",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/capturer.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/capturer.py",
+    "source_exists": true,
+    "sha256": "daff64c5639426990ea5f43879a0111b36d16c989bc143ce2925f2d1134974a0",
+    "upstream_sha256": "ff893228f5d92ef80ad70643717fdc0d0ea73e596faacb53e58eb40e3cf78a36",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/config.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/config.py",
+    "source_exists": true,
+    "sha256": "911dea4b2432cfcb069fccc651ad1c9cf148163805700bce7798619bf2be65d0",
+    "upstream_sha256": "4b833621b2548c5e72433006e445b8c24466c324474f1902fbfb8db5d9c05b44",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/decoder.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/decoder.py",
+    "source_exists": true,
+    "sha256": "361877b45611a414444de1e18bd16440006e1300cb53d8d0f9bc1ba815549070",
+    "upstream_sha256": "128ef25e2e0c36171f8c33e1d08c4a6a1f066f0d553df2467f96b7b4248a3e45",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/encoder.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/encoder.py",
+    "source_exists": true,
+    "sha256": "7355923050b5600e60f4e79463136052b4fe415bc0312e74c4827c533a938439",
+    "upstream_sha256": "373d58039ddd7ccc7fcc0a97e654def5d4ed4867280277eb82e7f740d28b4cbf",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/engine.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/engine.py",
+    "source_exists": true,
+    "sha256": "ffdcda400f5b331d480ba82b417039e6a09efbe4c34c8ba88634a9ab2e864179",
+    "upstream_sha256": "48b9de1d99434b17c5fa0c56a9a8cc917adbd28217f87ab5d7c64bc50f250281",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/llama.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/llama.py",
+    "source_exists": true,
+    "sha256": "571af00f956a9822e8383356a4c0179e6327436e52e05949695b2db84feb70de",
+    "upstream_sha256": "c436611fa864ac2dc873a19962562073508092d85015144ff67fb47514d4ce8b",
+    "byte_equal": false,
+    "normalized_equal": false
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/predictor.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/predictor.py",
+    "source_exists": true,
+    "sha256": "855069210b3ccd678aea47a4444244556507b2af9dd54b21444d4841dbddddd4",
+    "upstream_sha256": "feb22b2b974ab2e0a21a5e4ccfc6dc28089fc2386462bbb123496ea8e348a9c7",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/prompt_builder.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/prompt_builder.py",
+    "source_exists": true,
+    "sha256": "a129ca03105be94ea32cd5001fe597ed006e6ab71971bcc82fe5452175f8f67a",
+    "upstream_sha256": "bc70ef25a38ceed71dc1a7d7e64cff3ab16a0688aa0448b14e9ee046b65c7012",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/proxy.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/proxy.py",
+    "source_exists": true,
+    "sha256": "a6ced248c150c5d7516260aa45227cc03c04a0ad780069c4822d6afd8f01a272",
+    "upstream_sha256": "10bbef4ff3c6b196ce0fa94c1c87d134c7aad14d8860ac609b022d00183c454c",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/stream.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/stream.py",
+    "source_exists": true,
+    "sha256": "6fbe6e577b39d4820bb54911014773f7717fbda49e83c237c3838b468e2d93f7",
+    "upstream_sha256": "436205b462bf8a97b2111c755aaa871d3b04d3d83594e5c7291fd054c2400973",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/talker.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/talker.py",
+    "source_exists": true,
+    "sha256": "5828e360da45be5581e31b31f2cdefb33da0314842e939e88696939a62a9aee6",
+    "upstream_sha256": "17dfe0d1921530f922a6738e44b3fc551b51ff875e8fd2f67633435f5ad36a69",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/__init__.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/__init__.py",
+    "source_exists": true,
+    "sha256": "2a4a21ab3007e7327d6b150fbd487334ee824fee2b333601688440cbd8903868",
+    "upstream_sha256": "9cc799ac33fb146e3d6a6aa3984a5255f9efcc0ef03aa5d591f1c51d7963d99a",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/schema/constants.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/schema/constants.py",
+    "source_exists": true,
+    "sha256": "56f20bc1d125aebea50cb745b65a41d51283f35860752f5aac86dfe9a181ac72",
+    "upstream_sha256": "96702ba10051fdd3f6d3b25cb0cb33130600804eeaf55d7527657125304870f8",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/schema/protocol.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/schema/protocol.py",
+    "source_exists": true,
+    "sha256": "a330009cfe07e840ea092b9cf9da276f4642f8d1da09595e3601261d4df9a709",
+    "upstream_sha256": "2a007f3eeeda71cb947875fbe9e514938c215131c764ffece3da753d07af9865",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/schema/result.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/schema/result.py",
+    "source_exists": true,
+    "sha256": "b0db1d33ad92f3dd0c3726a7a043a536409f8354683a8d78393570a63777248c",
+    "upstream_sha256": "3af34faa3d881c2ba9b5242eee965c927aa0f2aa102591b546e6d28956f23c89",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/schema/__init__.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/schema/__init__.py",
+    "source_exists": true,
+    "sha256": "a7eca2f46a1be688e659b1e38515b494ed0e2119400a630b6fb67718a3b1ed45",
+    "upstream_sha256": "a7eca2f46a1be688e659b1e38515b494ed0e2119400a630b6fb67718a3b1ed45",
+    "byte_equal": true,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/utils/audio.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/utils/audio.py",
+    "source_exists": true,
+    "sha256": "91fde7de38cd0d6b9f063089b76323f41f65ff391fcbe413d72a328a15635788",
+    "upstream_sha256": "c1b2c46b40727a59e8775600f9c55217fe1c912028f6318f9639fe1979f1df2f",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/utils/mel.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/utils/mel.py",
+    "source_exists": true,
+    "sha256": "22a055d2aa493e63e0f9ebe3beb54d9808026f2ac6a98b04494fddbfca959067",
+    "upstream_sha256": "644c68af8a5da77df083745452a82bd8dfe947272ff7909045c808997855729a",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/utils/__init__.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/utils/__init__.py",
+    "source_exists": true,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "upstream_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "byte_equal": true,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/workers/decoder.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/workers/decoder.py",
+    "source_exists": true,
+    "sha256": "51a7938cc529eb1969677a1b117dcf50f7c84e1f0481d2e6ed1e46dc7f03d146",
+    "upstream_sha256": "9e08e7d3cddced185308eae2d46eb3dc58c184a7efa71619d403b06a4376a0ca",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/workers/recorder.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/workers/recorder.py",
+    "source_exists": true,
+    "sha256": "feca2a9c916fc087788e83c5334c1685feda05f33b288fd48b758bf4879716a7",
+    "upstream_sha256": "e3617e0e4a1e6a8c1d91fae5c036bdd8fcc57e7c1a8677220ba9237165df46ce",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/workers/speaker.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/workers/speaker.py",
+    "source_exists": true,
+    "sha256": "ba3566da9416986a7597bea9a1a191d99b9e34332fad65ce6c92a85f7e4aea92",
+    "upstream_sha256": "b4a6d1c6749cec55ee07a3f87ee20bbf18b8b3fb76914fa4dcdd8817f5fc2329",
+    "byte_equal": false,
+    "normalized_equal": true
+  },
+  {
+    "path": "vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/workers/__init__.py",
+    "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+    "source_path": "qwen3_tts_gguf/inference/workers/__init__.py",
+    "source_exists": true,
+    "sha256": "fc3651a16ffe17059314b790a54d5f03d8663cade5423cc197abbbb4f3b4b0e3",
+    "upstream_sha256": "b379f1cc62b7ac7d20f4960fdd85c248673a5aab18b98c5bc4ffc79196fbe963",
+    "byte_equal": false,
+    "normalized_equal": true
+  }
+]

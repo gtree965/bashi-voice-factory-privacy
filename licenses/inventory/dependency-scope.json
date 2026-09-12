@@ -1,0 +1,82 @@
+{
+  "environment": "existing embedded Python site-packages; not clean install",
+  "direct_requirement_file_count": 19,
+  "separately_installed": [
+    "qwen-tts==0.1.1",
+    "setuptools==79.0.1",
+    "wheel==0.45.1"
+  ],
+  "observed": 115,
+  "observed_closure": 67,
+  "extras": [
+    "aiohappyeyeballs",
+    "aiohttp",
+    "aiosignal",
+    "annotated-doc",
+    "annotated-types",
+    "anyio",
+    "attrs",
+    "brotli",
+    "edge-tts",
+    "fastapi",
+    "frozenlist",
+    "gradio",
+    "gradio_client",
+    "groovy",
+    "h11",
+    "hf-gradio",
+    "httpcore",
+    "httpx",
+    "markdown-it-py",
+    "mdurl",
+    "multidict",
+    "onnxruntime",
+    "orjson",
+    "pandas",
+    "pillow",
+    "pip",
+    "propcache",
+    "pydantic",
+    "pydantic_core",
+    "pydub",
+    "Pygments",
+    "pypinyin",
+    "python-dateutil",
+    "python-multipart",
+    "pytz",
+    "rich",
+    "safehttpx",
+    "semantic-version",
+    "shellingham",
+    "six",
+    "starlette",
+    "tabulate",
+    "tomlkit",
+    "typer",
+    "typing-inspection",
+    "tzdata",
+    "uvicorn",
+    "yarl"
+  ],
+  "missing_in_observed_environment": [
+    "wheel"
+  ],
+  "direct_mismatches": [
+    {
+      "name": "setuptools",
+      "expected": "setuptools==79.0.1",
+      "observed": "82.0.1"
+    },
+    {
+      "name": "sox",
+      "expected": "sox==1.5.0",
+      "observed": "1.4.1"
+    },
+    {
+      "name": "torchaudio",
+      "expected": "torchaudio==2.10.0",
+      "observed": "2.11.0"
+    }
+  ],
+  "note": "closure reconstructed from observed metadata, no-deps respected for qwen-tts; does not certify a fresh resolver result"
+}

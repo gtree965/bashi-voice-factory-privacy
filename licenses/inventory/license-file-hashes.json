@@ -1,0 +1,80 @@
+[
+  {
+    "path": "licenses/cpp-httplib-b7798-LICENSE.txt",
+    "bytes": 1075,
+    "sha256": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/FFmpeg-4.2.2-COPYING.GPLv3.txt",
+    "bytes": 35147,
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/imageio-ffmpeg-0.5.0-LICENSE.txt",
+    "bytes": 1312,
+    "sha256": "9c9be921bb50efe46473ce89135b037061df5ccdcae97cbf84ace18b0fa89dce",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/llama.cpp-b7798-LICENSE.txt",
+    "bytes": 1078,
+    "sha256": "e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/OpenSSL-3.0.16-LICENSE.txt",
+    "bytes": 10175,
+    "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/pyannote-segmentation-3.0-converted-LICENSE.txt",
+    "bytes": 1061,
+    "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/Python-3.12.10-LICENSE.txt",
+    "bytes": 36874,
+    "sha256": "e502c6b880ff58d614901495a9009c136539cd0b1e2a2abb8fc00b934c203419",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/Qwen3-TTS-source-LICENSE.txt",
+    "bytes": 11343,
+    "sha256": "a44a6081c73ad75f0255bb2bb5cab74ef1829565a895a24e53a4f11290ab7655",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/README.md",
+    "bytes": 2690,
+    "sha256": "45d8d03dba0cd3b51c11fc2922fdfadc953499b1e15e0e39cabe98da7fd0742b",
+    "applicability": "see licenses/README.md"
+  },
+  {
+    "path": "licenses/references/3D-Speaker-source-LICENSE.txt",
+    "bytes": 11357,
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "applicability": "reference-only: exact artifact mapping pending"
+  },
+  {
+    "path": "licenses/references/FunASR-model-license-1.1.txt",
+    "bytes": 5306,
+    "sha256": "7dba975a2069691db4992b0592d70828b330d2f8a30a71450f4e152a554e84f8",
+    "applicability": "reference-only: exact artifact mapping pending"
+  },
+  {
+    "path": "licenses/references/LLVM-14.0.6-OpenMP-LICENSE.txt",
+    "bytes": 19741,
+    "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4",
+    "applicability": "reference-only: exact artifact mapping pending"
+  },
+  {
+    "path": "licenses/references/Silero-v4.0-LICENSE.txt",
+    "bytes": 1075,
+    "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+    "applicability": "reference-only: exact artifact mapping pending"
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "revision": "dc8950d7dd12d0aa9b9f3dda54d82ff2f8b0a4b2",
+  "paths": [
+    "Qwen3-TTS-main/LICENSE",
+    "ref/llama.cpp/LICENSE",
+    "ref/llama.cpp/cmake/license.cmake",
+    "ref/llama.cpp/gguf-py/LICENSE",
+    "ref/llama.cpp/licenses/LICENSE-jsonhpp",
+    "ref/llama.cpp/vendor/cpp-httplib/LICENSE"
+  ]
+}
