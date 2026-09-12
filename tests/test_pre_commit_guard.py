@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,13 @@ class GuardTests(unittest.TestCase):
         self.git("config", "user.name", "Guard Test")
         self.git("config", "user.email", "guard@example.invalid")
         self.git("config", "core.autocrlf", "false")
+        # The rules under test are the repository's own. This machine also mirrors
+        # several of them in its global exclude file, unanchored, where they match
+        # at every level and shadow the anchored repository rules; pin the exclude
+        # file to an empty one so each case exercises the repository alone.
+        self.excludes = self.root / ".git/empty-excludes"
+        self.excludes.write_text("", encoding="utf-8")
+        self.git("config", "core.excludesFile", str(self.excludes))
         self.terms = self.root / ".git/info/bashi-sensitive-terms.txt"
         self.terms.write_text("# Synthetic entries only\nPRIVATE_SENTINEL_9X\n", encoding="utf-8")
 
@@ -57,6 +65,35 @@ class GuardTests(unittest.TestCase):
             self.stage(path, force=True)
         self.assertEqual(set(guard.ignored_paths(self.root, paths)),
                          {paths[0], paths[3]})
+
+    def stage_gitignore(self):
+        self.stage(".gitignore", (ROOT / ".gitignore").read_bytes())
+
+    def test_internal_document_rules_are_root_anchored(self):
+        self.stage_gitignore()
+        names = ["TASK_05_x.md", "GLM_TASK_01_x.md", "DEEPSEEK_TASK_15_x.md",
+                 "CODEX_X.md", "OS2026_x.md", "ACCEPTANCE_v0.1.3.md",
+                 "CodeBuddy_plan.md", "TIMBRE_DRIFT_FINDINGS.md"]
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(guard.ignored_paths(self.root, [name]), [name])
+                for parent in ("release_docs/", "docs/"):
+                    self.assertEqual(guard.ignored_paths(self.root, [parent + name]), [])
+
+    def test_publishable_documents_are_not_blocked(self):
+        self.stage_gitignore()
+        allowed = ["README.md", "THIRD_PARTY.md", "CONTRIBUTING.md", "CHANGELOG.md",
+                   "docs/evidence/method.md", "release_docs/ACCEPTANCE_v0.1.4.md"]
+        for path in allowed:
+            with self.subTest(path=path):
+                self.stage(path, "ordinary content\n", force=True)
+        self.assertEqual(self.check(), [])
+
+    def test_extended_agent_names_are_caught(self):
+        for name in ("GLM", "Zhipu", "ChatGLM"):
+            with self.subTest(name=name):
+                self.stage(content=name + "\n")
+                self.assertTrue(any("residue" in issue for issue in self.check()))
 
     def test_ignore_check_covers_already_tracked_files(self):
         self.stage()
@@ -519,6 +556,23 @@ class PatternTests(unittest.TestCase):
                     + r"|claude|codex|anthropic|chatgpt|openai|gemini|copilot(?!\+)"
                     + r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
         self.assertEqual(pdf.FORBIDDEN.pattern.encode(), expected.encode())
+
+    def test_ai_tool_names_and_the_guard_extra_names_are_separate(self):
+        import check_pdf_links as pdf
+        self.assertEqual(
+            pdf.AI_TOOL_NAMES,
+            r"claude|codex|anthropic|chatgpt|openai|gemini|copilot(?!\+)")
+        self.assertEqual(
+            pdf.COMMIT_GUARD_EXTRA_AI_NAMES,
+            "deepseek|codebuddy|qoder|glm|zhipu|chatglm")
+        # re.UNICODE is added automatically for str patterns.
+        self.assertEqual(pdf.FORBIDDEN.flags, re.IGNORECASE | re.UNICODE)
+
+    def test_gitignore_residue_exemption_stays_narrow(self):
+        lines = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertEqual({line for line in lines if guard.TRACE_TEXT.search(line)},
+                         {"/GLM_TASK_*.md", "/DEEPSEEK_TASK_*.md", "/CODEX_*.md",
+                          "/CodeBuddy_plan.md"})
 
 
 if __name__ == "__main__":

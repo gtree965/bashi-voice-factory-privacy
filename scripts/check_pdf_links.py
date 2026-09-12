@@ -62,7 +62,11 @@ FORBIDDEN = re.compile("|".join((
 # FORBIDDEN deliberately, so the release gate's pattern stays byte-identical, and
 # registered here so the guard module itself never spells the names literally.
 # The product's own model name (Qwen) must never be added to this pattern.
-COMMIT_GUARD_EXTRA_AI_NAMES = r"deepseek|codebuddy|qoder"
+# "glm" is deliberately unanchored: a word boundary would stop matching the
+# GLM_TASK_*.md filenames this guard exists to protect ("_" is a word character).
+# The false-positive surface was measured on 2026-09-12 across all 138 tracked
+# blobs, text and binary: zero hits.
+COMMIT_GUARD_EXTRA_AI_NAMES = r"deepseek|codebuddy|qoder|glm|zhipu|chatglm"
 
 
 def uri_is_allowed(uri: str) -> bool:

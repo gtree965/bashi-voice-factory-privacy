@@ -96,3 +96,16 @@ models/
 /data_aishell3/
 800多克隆必备音色素材合集/
 800多克隆必备音色素材合集.zip
+
+# Internal working documents — root level only.
+# Deliberately duplicated from the machine-global ignore so a fresh clone is
+# protected on its own. Anchored with a leading slash: published copies under
+# release_docs/ and docs/ must stay visible.
+/TASK_*.md
+/GLM_TASK_*.md
+/DEEPSEEK_TASK_*.md
+/CODEX_*.md
+/OS2026_*.md
+/ACCEPTANCE_*.md
+/CodeBuddy_plan.md
+/TIMBRE_DRIFT_FINDINGS.md

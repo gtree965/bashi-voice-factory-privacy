@@ -30,6 +30,13 @@ TRACE_ALLOWLIST = frozenset((
     "tests/test_backend_probe.py",
     "tests/test_pre_commit_guard.py",
     "bashi_tts_kernel/zh_normalizer_lite.py",
+    # The repository's own ignore rules have to name, by agent, the documents
+    # they exclude, so the residue gate otherwise refuses the very commit that
+    # installs them; that refusal was reproduced in a disposable repository
+    # before this entry was added. Kept narrow by
+    # test_gitignore_residue_exemption_stays_narrow, which pins the exact set of
+    # .gitignore lines allowed to match the pattern.
+    ".gitignore",
 ))
 
 # A push publishes history that cannot be taken back, so every commit and
