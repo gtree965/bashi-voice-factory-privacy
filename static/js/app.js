@@ -2712,10 +2712,11 @@ async function downloadAudio() {
     const mp3Filename = state.currentAudioUrl.split('/').pop();
 
     if (format === 'mp3') {
-        // Direct MP3 download, no conversion needed
+        // Direct MP3 download, no conversion needed (through the server route:
+        // the response's Content-Disposition filename is what actually lands).
         const link = document.createElement('a');
-        link.href = state.currentAudioUrl;
-        link.download = `edge-tts-${Date.now()}.mp3`;
+        link.href = `/api/download/${encodeURIComponent(mp3Filename)}`;
+        link.download = `bashi-voice-${Date.now()}.mp3`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2733,8 +2734,8 @@ async function downloadAudio() {
             const data = await response.json();
             if (data.success) {
                 const link = document.createElement('a');
-                link.href = `/api/download/${data.filename}`;
-                link.download = `edge-tts-${Date.now()}.${format}`;
+                link.href = `/api/download/${encodeURIComponent(data.filename)}`;
+                link.download = `bashi-voice-${Date.now()}.${format}`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);

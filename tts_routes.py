@@ -957,4 +957,14 @@ def convert_audio():
 
 @tts_bp.route("/api/download/<filename>")
 def download_audio(filename):
-    return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
+    # rev.2: the download name is generated server-side (never read from the
+    # client), and only the four UI formats may pass the extension whitelist;
+    # send_from_directory keeps its own path-traversal protection.
+    allowed_extensions = (".mp3", ".wav", ".ogg", ".flac")
+    extension = Path(filename).suffix.lower()
+    if extension not in allowed_extensions:
+        return jsonify({"error": "Unsupported download format"}), 400
+    download_name = f"bashi-voice-{int(time.time() * 1000)}{extension}"
+    return send_from_directory(
+        OUTPUT_DIR, filename, as_attachment=True, download_name=download_name
+    )

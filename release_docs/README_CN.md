@@ -11,8 +11,6 @@
 
 完全离线运行的本地语音工厂网页应用。首次启动联网下载完依赖与模型之后，**所有文字转语音、语音转文字、音频生成、文件保存都在你自己的电脑上完成**，没有任何音频数据上传云端。
 
-> ⚡ 想要云端语音质量、更快的合成速度？请关注 [巴适声工厂 · 极速版 (Bashi Voice Factory Turbo)](https://github.com/gtree965/bashi-voice-factory-turbo) — 微软 Edge TTS 引擎、14 种语言、5 万字长文。需要联网。
-
 **作者：** Alex Li (ncorecpu@gmail.com)
 **许可：** [MIT License](LICENSE)
 **源码：** <https://github.com/gtree965/bashi-voice-factory-privacy> · <https://gitee.com/gtree965/bashi-voice-factory-privacy>（国内镜像）
