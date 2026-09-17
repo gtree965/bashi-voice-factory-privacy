@@ -18,8 +18,9 @@
 | `references/Silero-v4.0-LICENSE.txt` | **仅参考**。该 tag 的模型与实际 VAD 哈希不同，不得自动套用 |
 | `references/3D-Speaker-source-LICENSE.txt` | **仅参考代码许可**。模型 checkpoint 条款与转换谱系待追溯 |
 | `references/FunASR-model-license-1.1.txt` | SenseVoice 当前原模型卡指向的条款快照；实际转换版本映射仍待补。不是 Apache-2.0 |
+| `upstream-qwen3-tts-gguf-permission-2026-09-16.md` | HaujetZhao/Qwen3-TTS-GGUF 作者在 issue #31 给出的项目特定公开授权记录；**不是许可证文件**，适用范围与解读边界见文件内说明 |
 
-没有创建名为“Qwen3-TTS-GGUF LICENSE”的替代授权文件，因为固定提交的全项目授权未找到。也没有用自写 NOTICE 冒充上游 NOTICE。当前只收录已找到的原文及明确标注的参考文件；将来按实际组件要求保留其原有 NOTICE。
+没有创建名为“Qwen3-TTS-GGUF LICENSE”的替代授权文件，也没有用自写 NOTICE 冒充上游 NOTICE；现已收录作者本人的授权记录，见上表——该记录是公开授权说明，不是许可证文件。当前只收录已找到的原文及明确标注的参考文件；将来按实际组件要求保留其原有 NOTICE。
 
 [文件哈希](inventory/license-file-hashes.json) · [取得来源与结果](inventory/source-evidence.json) · [第三方总表](../THIRD_PARTY.md)
 
