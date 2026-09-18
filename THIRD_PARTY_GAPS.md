@@ -4,18 +4,23 @@
 
 **结论：不能结案为“发行许可核查通过”。** 文件盘点和若干来源比对已完成；阻断修复、许可映射与部分环境复现仍未完成。本清单的阻断是内部放行条件，不意味着已收到组委会否决，也不把证据不足直接表述为已确定侵权。
 
-## 已取得授权、待落包（原阻断项）
+## 已取得授权、待发布（原阻断项）
 
 | 编号 | 具体对象 | 依据；两段式边界 |
 |---|---|---|
-| G01 | `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/*` 及随包 readme/requirements | 上游作者在 issue #31 给出的项目特定公开授权，记录见 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`。**授权已取得，待落包**：阶段 1「授权说明进入仓库」已完成；阶段 2「授权说明进入发行包并经最终 ZIP 复验」尚未完成，因此此处不标记为关闭，也不改写为可结案 |
+| G01 | `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/*` 及随包 readme/requirements | 上游作者在 issue #31 给出的项目特定公开授权，记录见 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`。**授权记录已随包，待发布**：阶段 1「授权说明进入仓库」已完成；阶段 2「授权说明随发行包分发」已由 v0.1.5 完成。关闭条件里的「进入发行包」指实际对外分发，发布动作不在本单，因此此处不写为关闭 |
+
+## 已关闭（v0.1.5）
+
+| 编号 | 具体对象 | 关闭依据 |
+|---|---|---|
+| G02 | bin 内 llama/ggml DLL、EXE | 原文已随包（`licenses/llama.cpp-b7798-LICENSE.txt`、`licenses/cpp-httplib-b7798-LICENSE.txt`）；构建门禁已入库（`Assert-StagedLicenseDocsMatchGit`）；最终 ZIP 已复验（`bashi-voice-factory-privacy-v0.1.5-windows.zip`） |
+| G03 | Python 目录 `libcrypto-3.dll`、`libssl-3.dll` | 原文已随包（`licenses/OpenSSL-3.0.16-LICENSE.txt`）；构建门禁已入库（`Assert-StagedLicenseDocsMatchGit`）；最终 ZIP 已复验（`bashi-voice-factory-privacy-v0.1.5-windows.zip`） |
 
 ## 阻断项
 
 | 编号 | 具体对象 | 已见证据 | 关闭条件；本轮边界 |
 |---|---|---|---|
-| G02 | bin 内 llama/ggml DLL、EXE | 与官方 b7798 包字节一致；旧包未附 ggml 作者的 MIT 许可 | 在后续构建中纳入原始声明，复验最终 ZIP。原文已准备，本轮不改打包 |
-| G03 | Python 目录 `libcrypto-3.dll`、`libssl-3.dll` | 版本 3.0.16，官方来源一致；Python 综合 LICENSE 没有 OpenSSL 条款正文 | 后续包纳入对应 OpenSSL 原文并核查其余须保留声明。本轮只准备原文 |
 | G04 | `libomp140.x86_64.dll` | 官方 b7798 包字节一致；LLVM 文件元数据不足以确定源码版本/分发条款 | 取得对应构建来源与许可，完成版本映射。LLVM 14 原文仅作参考，不能替代此步骤 |
 | G05 | 声称“干净安装后的全部 Python 依赖”这一结论 | 本机 115 项环境含 3 个直接版本偏差，wheel 元数据缺失，额外包混入 | 在隔离环境按真实启动链生成可靠安装记录及依赖清单；本轮未重装，不能将观察清单当发行环境认证 |
 
@@ -48,6 +53,12 @@
 
 - 上游仓库仍无标准根 LICENSE（`license` 字段为空；默认分支根目录无 `LICENSE*` / `COPYING*` / `NOTICE*`；2026-09-17 两次只读检查一致）。当前分发依据是作者在 issue #31 的项目特定公开授权记录，而不是标准许可证。**此项不再是发行阻断**；若上游后续补充许可证文件或变更授权，按新证据更新记录并重新评估。
 
+## 已知陈旧说明（随 G05 重生成）
+
+- `licenses/inventory/release-files.csv`、`release-summary.json` 等描述的是 **v0.1.4** 的 207 个条目，**不适用于 v0.1.5**（v0.1.5 新增 33 份许可材料）。
+- `licenses/inventory/license-file-hashes.json` 中 `licenses/README.md` 记为 2,690 B，实际为 2,975 B（`48c478f` 后未重生成）。
+- 以上两项均在隔离环境随 G05 一并重生成；本单不改 `licenses/inventory/` 的任何字节。
+
 ## 建议下一步
 
-G01 的授权依据已取得并记录（`licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`）；下一步是让该说明随发行包分发，并在最终 ZIP 复验后由后续打包单改写状态。同时准备 G02/G03 的独立打包补正单，避免只有仓库文档而成品仍缺声明。G04 先取得精确条款。模型与 CUDA 继续按原始模型、转换产物、实际下载文件三层追溯。所有涉及联系上游、替换组件、删减文件、重打包或发布的操作均未在本轮执行。
+G01 的授权记录已随 v0.1.5 包分发，待实际对外发布后关闭。G02/G03 已随 v0.1.5 落包并关闭（原文随包、构建门禁入库、最终 ZIP 已复验）。G04 先取得精确条款；G05 在隔离环境重建安装记录与依赖清单，并重生成上节的陈旧条目。模型与 CUDA 继续按原始模型、转换产物、实际下载文件三层追溯。本单只做许可材料落包与状态更新，未联系上游、未替换组件、未删减文件。

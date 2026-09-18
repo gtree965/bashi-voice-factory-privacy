@@ -315,6 +315,154 @@ function Assert-StagedStylePreviewsMatchGit {
     }
 }
 
+function Assert-StagedLicenseDocsMatchGit {
+    param([Parameter(Mandatory = $true)][string]$StageRoot)
+
+    # G02/G03: the two top-level inventories plus the whole licenses/ tree
+    # ship verbatim at the package root. This gate fails closed:
+    #   1. the staged licenses/ file set must equal `git ls-files licenses`,
+    #      and both inventories must exist at the package root (33 files total);
+    #   2. every staged file must equal its INDEX blob after normalising
+    #      CRLF->LF on BOTH sides (no other normalisation: no BOM, no
+    #      whitespace, no encoding changes).
+    # The index (not HEAD) is the baseline: it is "what will be committed".
+    # Unstaged worktree edits make this gate fail on purpose: run `git add`
+    # first so that what ships equals what is committed (先 git add 再构建).
+    $stagedLicenseRoot = Join-Path $StageRoot "licenses"
+    if (-not (Test-Path -LiteralPath $stagedLicenseRoot -PathType Container)) {
+        throw "Missing staged licenses directory: $stagedLicenseRoot"
+    }
+
+    $stageFull = [System.IO.Path]::GetFullPath($StageRoot).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $stagePrefix = $stageFull + [System.IO.Path]::DirectorySeparatorChar
+
+    $stagedFiles = @(
+        Get-ChildItem -LiteralPath $stagedLicenseRoot -Recurse -Force -File |
+            ForEach-Object {
+                $fullPath = [System.IO.Path]::GetFullPath($_.FullName)
+                if (-not $fullPath.StartsWith($stagePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Staged license file escaped package root: $fullPath"
+                }
+                $fullPath.Substring($stagePrefix.Length).Replace("\", "/")
+            } |
+            Sort-Object -Unique
+    )
+
+    $trackedOutput = @(
+        & git -C $AppRoot ls-files -- "licenses"
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "git ls-files failed while checking the staged license docs."
+    }
+    $trackedFiles = @(
+        $trackedOutput |
+            ForEach-Object { $_.Trim().Replace("\", "/") } |
+            Where-Object { $_ } |
+            Sort-Object -Unique
+    )
+
+    $trackedLookup = @{}
+    foreach ($path in $trackedFiles) {
+        $trackedLookup[$path.ToLowerInvariant()] = $true
+    }
+    $stagedLookup = @{}
+    foreach ($path in $stagedFiles) {
+        $stagedLookup[$path.ToLowerInvariant()] = $true
+    }
+
+    $unexpected = @($stagedFiles | Where-Object { -not $trackedLookup.ContainsKey($_.ToLowerInvariant()) })
+    $missing = @($trackedFiles | Where-Object { -not $stagedLookup.ContainsKey($_.ToLowerInvariant()) })
+    if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
+        $details = @()
+        if ($unexpected.Count -gt 0) {
+            $details += "Unexpected staged license files (not tracked by git):"
+            foreach ($path in $unexpected) {
+                $details += "  + $path"
+            }
+        }
+        if ($missing.Count -gt 0) {
+            $details += "Tracked license files missing from staging:"
+            foreach ($path in $missing) {
+                $details += "  - $path"
+            }
+        }
+        throw ("License docs distribution gate failed.`n" + ($details -join "`n"))
+    }
+
+    $inventoryDocs = @("THIRD_PARTY.md", "THIRD_PARTY_GAPS.md")
+    foreach ($name in $inventoryDocs) {
+        $inventoryPath = Join-Path $StageRoot $name
+        if (-not (Test-Path -LiteralPath $inventoryPath -PathType Leaf)) {
+            throw "Missing staged license inventory: $inventoryPath"
+        }
+    }
+
+    $checkedFiles = @($trackedFiles) + $inventoryDocs
+    if ($checkedFiles.Count -ne 33) {
+        throw (("License docs gate expected 33 files (31 tracked licenses + 2 inventories), found {0}." -f $checkedFiles.Count) + " If the license pack grew, update this gate deliberately in the same commit.")
+    }
+
+    $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+
+    function ConvertTo-NormalizedLfBase64 {
+        param([byte[]]$Bytes)
+        $text = $latin1.GetString($Bytes)
+        return [Convert]::ToBase64String($latin1.GetBytes($text.Replace("`r`n", "`n")))
+    }
+
+    function Get-GitIndexBlobBytes {
+        param([string]$RepoRoot, [string]$RelativePath)
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = "git"
+        $startInfo.Arguments = "-C `"$RepoRoot`" cat-file blob `":$RelativePath`""
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.CreateNoWindow = $true
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+        $memory = New-Object System.IO.MemoryStream
+        $process.StandardOutput.BaseStream.CopyTo($memory)
+        $errorText = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw ("git cat-file failed for {0} (exit {1}): {2}" -f $RelativePath, $process.ExitCode, $errorText.Trim())
+        }
+        return ,$memory.ToArray()
+    }
+
+    $failures = @()
+    foreach ($relative in $checkedFiles) {
+        $stagedPath = Join-Path $StageRoot $relative
+        if (-not (Test-Path -LiteralPath $stagedPath -PathType Leaf)) {
+            throw "Missing staged license doc: $stagedPath"
+        }
+        $stagedBytes = [System.IO.File]::ReadAllBytes($stagedPath)
+        $indexBytes = Get-GitIndexBlobBytes -RepoRoot $AppRoot -RelativePath $relative
+        $stagedNormalized = ConvertTo-NormalizedLfBase64 -Bytes $stagedBytes
+        $indexNormalized = ConvertTo-NormalizedLfBase64 -Bytes $indexBytes
+        # rev.5 (task 22): compare case-SENSITIVELY. PowerShell -eq ignores
+        # case, and the Base64 alphabet shifts by exactly 26 between A-Z and
+        # a-z, so an aligned single-byte change of +/-26 (e.g. Windows ->
+        # WiTdows) alters only the case of one character and -eq would
+        # wrongly accept it.
+        $equal = ($stagedNormalized -ceq $indexNormalized)
+        $status = if ($equal) { "OK  " } else { "FAIL" }
+        Write-Host ("  [license-gate] {0} {1} (staged {2} B, index {3} B, LF-normalised equal: {4})" -f $status, $relative, $stagedBytes.Length, $indexBytes.Length, $equal)
+        if (-not $equal) {
+            $failures += ("{0} (staged {1} B, index {2} B)" -f $relative, $stagedBytes.Length, $indexBytes.Length)
+        }
+    }
+    if ($failures.Count -gt 0) {
+        $failureLines = ($failures | ForEach-Object { "  ! $_" }) -join "`n"
+        throw ("License docs content gate failed for {0} file(s): CRLF->LF normalisation did not make them equal.`n{1}`nRun `git add` first (先 git add 再构建) so that what ships equals what is committed." -f $failures.Count, $failureLines)
+    }
+
+    Write-Host ("License docs gate passed: {0} files match the git index after CRLF->LF normalisation." -f $checkedFiles.Count)
+}
+
 function Stage-Package {
     param(
         [Parameter(Mandatory = $true)][string]$StageRoot,
@@ -435,6 +583,21 @@ exit /b %ERRORLEVEL%
         Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
     }
 
+    # G02/G03 license pack — the two inventories plus the whole licenses/ tree
+    # ship verbatim at the package root (same level as LICENSE / README.md) so
+    # every relative link between them keeps working:
+    #   THIRD_PARTY.md -> licenses/inventory/*
+    #   licenses/README.md -> ../THIRD_PARTY*.md
+    # Byte-for-byte copies of the worktree files; missing sources fail closed.
+    foreach ($name in @("THIRD_PARTY.md", "THIRD_PARTY_GAPS.md")) {
+        $src = Join-Path $AppRoot $name
+        if (-not (Test-Path -LiteralPath $src)) {
+            throw "Missing license inventory source: $src"
+        }
+        Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
+    }
+    Copy-RelativeDirectory -SourceRoot $AppRoot -RelativePath "licenses" -DestRoot $StageRoot
+
     # Required bilingual PDF help file, generated locally (Pandoc + Edge
     # headless print-to-pdf) and dropped at the path below. It is verified
     # before the copy and compared byte for byte afterwards, because the
@@ -456,6 +619,7 @@ exit /b %ERRORLEVEL%
 
     Remove-StagedDebris -Root $StageRoot
     Assert-StagedStylePreviewsMatchGit -AppDest $appDest
+    Assert-StagedLicenseDocsMatchGit -StageRoot $StageRoot
     Assert-PortablePthClean -AppDest $appDest
     Assert-LauncherCompatibility -AppDest $appDest
 }

@@ -82,6 +82,20 @@ Use this checklist for every tagged release.
   A4 page size, Chinese text rendering without tofu boxes, no table split mid-row, the
   mirror-fallback troubleshooting row present, and both `app.log` and `launch_log.txt` in the
   log-path guidance.
+
+  🔴 **Build gate (mandatory):** use an independent `--user-data-dir`; after the print
+  command returns, poll for the target PDF (suggested timeout 60 s) — a zero exit code
+  alone is not success (the CLI can exit before the file is written). The target must
+  exist, be non-empty, and have a SHA-256 different from the pre-rebuild file. CDP
+  `Page.printToPDF` with `preferCSSPageSize` is an accepted equivalent print path.
+
+- **License pack gate.** Before every release, confirm the final ZIP contains
+  `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the whole `licenses/` tree — 33 files
+  in total — and that every one of them matches the git index after CRLF->LF
+  normalisation (enforced by `Assert-StagedLicenseDocsMatchGit` in
+  `scripts/build_portable_zip.ps1`; run `git add` before building). The final ZIP's
+  SHA-256 is recorded in the out-of-package `.sha256` file and the acceptance report —
+  never inside the packaged documents.
 - **Third-party audio gate.** `static/audio/style_previews/` is the only audio directory the
   packaging script ships, and it is copied by a plain recursive filesystem copy
   (`Copy-RelativeDirectory` in `scripts/build_portable_zip.ps1`). That copy does not consult git,
