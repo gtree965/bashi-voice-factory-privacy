@@ -4,8 +4,9 @@ Guards the defect that task 22 rev.5 found in `Assert-StagedLicenseDocsMatchGit`
 the gate compared the CRLF->LF-normalised documents as Base64 using PowerShell
 `-eq`, which ignores case. The Base64 alphabet shifts by exactly 26 between `A-Z`
 and `a-z`, so an aligned single-byte change of +/-26 alters only the *case* of one
-character, and `-eq` accepted it. The real occurrence was `THIRD_PARTY.md` offset
-105: `n`(0x6E) -> `T`(0x54), which moved only one Base64 character, `u` -> `U`.
+character, and `-eq` accepted it. The real occurrence was `THIRD_PARTY.md`: the
+`Windows` token starts at offset 105 and the changed `n`(0x6E) -> `T`(0x54) is at
+offset 107, which moved only one Base64 character, `u` -> `U`.
 
 The gate now compares with `-ceq`. The end-to-end smoke that proved the fix ran
 from `.tmp/` and is sealed with the task 22 evidence rather than tracked, so this
@@ -112,11 +113,11 @@ class LicenseGateSourceTests(unittest.TestCase):
 class CaseInsensitiveBase64PropertyTests(unittest.TestCase):
     """Why -eq was unsafe, stated without reading any repository file.
 
-    Real occurrence (task 22 rev.5): `THIRD_PARTY.md` offset 105, `n`(0x6E) ->
-    `T`(0x54). The delta is 26, and because that byte sits third in its three-byte
-    group only the group's last Base64 character moves -- 46 (`u`) -> 20 (`U`),
-    the same letter in the other case. PowerShell -eq, which folds case, called
-    the two documents equal.
+    `THIRD_PARTY.md`, `Windows` token at offset 105, changed byte `n`(0x6E) ->
+    `T`(0x54) at offset 107. The delta is 26, and because that byte sits third in
+    its three-byte group only the group's last Base64 character moves -- 46 (`u`)
+    -> 20 (`U`), the same letter in the other case. PowerShell -eq, which folds
+    case, called the two documents equal.
     """
 
     ALPHABET = string.ascii_uppercase + string.ascii_lowercase + string.digits + "+/"
