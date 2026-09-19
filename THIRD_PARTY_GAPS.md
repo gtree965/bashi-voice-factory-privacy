@@ -8,7 +8,7 @@
 
 | 编号 | 具体对象 | 依据；两段式边界 |
 |---|---|---|
-| G01 | `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/*` 及随包 readme/requirements | 上游作者在 issue #31 给出的项目特定公开授权，记录见 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`。**授权记录已随包，待发布**：阶段 1「授权说明进入仓库」已完成；阶段 2「授权说明随发行包分发」尚未完成——授权记录已纳入 v0.1.5 本地构建并通过最终 ZIP 复验，但 v0.1.5 尚未对外发布。关闭条件里的「进入发行包」指实际对外分发，发布动作不在本单，因此此处不写为关闭 |
+| G01 | `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/*` 及随包 readme/requirements | 上游已于 2026-09-19 采用 MIT（`74feb581`）。MIT 原文与 issue 授权演进记录**已纳入受门禁控制的 v0.1.5 发行材料范围**；G01 待该版本**实际对外发布**后关闭。**授权记录已随包，待发布**：阶段 1「授权说明进入仓库」已完成；阶段 2「授权说明随发行包分发」尚未完成——材料已纳入 v0.1.5 本地构建并通过最终 ZIP 复验，但 v0.1.5 尚未对外发布；已发布的 v0.1.0–v0.1.4 旧 ZIP 不含这些材料。关闭条件里的「进入发行包」指实际对外分发，发布动作不在本单，因此此处不写为关闭 |
 
 ## 已关闭（v0.1.5）
 
@@ -51,13 +51,15 @@
 
 ## 改进建议（不阻断发行）
 
-- 上游仓库仍无标准根 LICENSE（`license` 字段为空；默认分支根目录无 `LICENSE*` / `COPYING*` / `NOTICE*`；2026-09-17 两次只读检查一致）。当前分发依据是作者在 issue #31 的项目特定公开授权记录，而不是标准许可证。**此项不再是发行阻断**；若上游后续补充许可证文件或变更授权，按新证据更新记录并重新评估。
+- 上游根目录许可证：2026-09-17 两次只读检查时，上游仓库 `license` 字段为空、默认分支根目录无 `LICENSE*` / `COPYING*` / `NOTICE*`。2026-09-19 上游已加入 MIT（提交 `74feb581`，`license` 字段为 `mit`）；本项目按 MIT 落包，同时完整保留 issue #31 的先前公开授权记录（见 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`）。**此项不是发行阻断**；若上游后续变更授权，按新证据更新记录并重新评估。
 
 ## 已知陈旧说明（随 G05 重生成）
 
-- `licenses/inventory/release-files.csv`、`release-summary.json` 等描述的是 **v0.1.4** 的 207 个条目，**不适用于 v0.1.5**（v0.1.5 新增 33 份许可材料）。
-- `licenses/inventory/license-file-hashes.json` 中 `licenses/README.md` 记为 2,690 B，实际为 2,975 B（`48c478f` 后未重生成）。
-- 以上两项均在隔离环境随 G05 一并重生成；本单不改 `licenses/inventory/` 的任何字节。
+- `licenses/inventory/license-file-hashes.json`：**不含**本次新增的 `licenses/Qwen3-TTS-GGUF-74feb58-LICENSE.txt`；且仍把 `licenses/README.md` 记为 2,690 B（实际 2,975 B，本单还会再改它）。
+- `licenses/inventory/source-evidence.json`：**不含**本次新增来源（上游根目录 `LICENSE`，提交 `74feb581`）；其当前出处由更新后的授权记录 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md` 承载。
+- `licenses/inventory/release-files.csv`、`release-summary.json` 描述的仍是 **v0.1.4** 的 207 个条目，**不适用于 v0.1.5**（v0.1.5 新增 34 份许可材料）。
+
+三项均在隔离环境随 G05 一并重生成；本单不改 `licenses/inventory/` 的任何字节。
 
 ## 建议下一步
 

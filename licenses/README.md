@@ -12,6 +12,7 @@
 | `Python-3.12.10-LICENSE.txt` | 从被核查 ZIP 原样提取，且与 Python 官方嵌入式包一致；包含历史 Python 许可与部分第三方声明 |
 | `pyannote-segmentation-3.0-converted-LICENSE.txt` | 本机转换归档解压目录所带 CNRS MIT；其哈希在归档文件清单中可复核 |
 | `Qwen3-TTS-source-LICENSE.txt` | 官方 Qwen3-TTS 源码库许可证；不能覆盖 HaujetZhao 转换运行时的全部原创代码，也不能替代模型精确版本映射 |
+| `Qwen3-TTS-GGUF-74feb58-LICENSE.txt` | 上游 HaujetZhao/Qwen3-TTS-GGUF 仓库根目录 LICENSE（提交 `74feb581`，2026-09-19）；逐行等于规范 MIT 模板；覆盖上游作者有权授权的原创部分，不改变 vendored 第三方组件（Qwen3-TTS、llama.cpp/ggml 等）各自的许可证 |
 | `imageio-ffmpeg-0.5.0-LICENSE.txt` | 本机已安装包装层的 BSD-2-Clause；不覆盖随 wheel 携带的 FFmpeg EXE |
 | `FFmpeg-4.2.2-COPYING.GPLv3.txt` | FFmpeg n4.2.2 原文；实际 EXE 自报 GPLv3-or-later。对应源码交付方式尚需审查 |
 | `references/LLVM-14.0.6-OpenMP-LICENSE.txt` | **仅参考**。尚未证明包内 libomp140 对应此源码版本，不得标为已闭合许可 |

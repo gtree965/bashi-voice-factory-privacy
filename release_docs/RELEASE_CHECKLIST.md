@@ -90,7 +90,7 @@ Use this checklist for every tagged release.
   `Page.printToPDF` with `preferCSSPageSize` is an accepted equivalent print path.
 
 - **License pack gate.** Before every release, confirm the final ZIP contains
-  `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the whole `licenses/` tree — 33 files
+  `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the whole `licenses/` tree — 34 files
   in total — and that every one of them matches the git index after CRLF->LF
   normalisation (enforced by `Assert-StagedLicenseDocsMatchGit` in
   `scripts/build_portable_zip.ps1`; run `git add` before building). The final ZIP's

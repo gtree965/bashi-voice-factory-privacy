@@ -321,7 +321,7 @@ function Assert-StagedLicenseDocsMatchGit {
     # G02/G03: the two top-level inventories plus the whole licenses/ tree
     # ship verbatim at the package root. This gate fails closed:
     #   1. the staged licenses/ file set must equal `git ls-files licenses`,
-    #      and both inventories must exist at the package root (33 files total);
+    #      and both inventories must exist at the package root (34 files total);
     #   2. every staged file must equal its INDEX blob after normalising
     #      CRLF->LF on BOTH sides (no other normalisation: no BOM, no
     #      whitespace, no encoding changes).
@@ -401,8 +401,8 @@ function Assert-StagedLicenseDocsMatchGit {
     }
 
     $checkedFiles = @($trackedFiles) + $inventoryDocs
-    if ($checkedFiles.Count -ne 33) {
-        throw (("License docs gate expected 33 files (31 tracked licenses + 2 inventories), found {0}." -f $checkedFiles.Count) + " If the license pack grew, update this gate deliberately in the same commit.")
+    if ($checkedFiles.Count -ne 34) {
+        throw (("License docs gate expected 34 files (32 tracked licenses + 2 inventories), found {0}." -f $checkedFiles.Count) + " If the license pack grew, update this gate deliberately in the same commit.")
     }
 
     $latin1 = [System.Text.Encoding]::GetEncoding(28591)

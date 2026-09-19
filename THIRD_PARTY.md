@@ -2,7 +2,7 @@
 
 核查日期：2026-09-12。范围：巴适声工厂·隐私版 v0.1.4 Windows 发行包及其下载入口。
 
-**范围说明（v0.1.5）：** 本盘点描述 **v0.1.4** 包；v0.1.5 在此基础上新增 33 份许可材料（本文件、`THIRD_PARTY_GAPS.md` 与 `licenses/` 整目录随包），逐条目盘点随 G05 重生成。本文件中的 v0.1.4 包大小与条目数保留原值，未就地改写；v0.1.5 的落包改动与状态更新见[缺口清单](THIRD_PARTY_GAPS.md)（G02/G03 已关闭、G01 授权记录已随包待发布）。
+**范围说明（v0.1.5）：** 本盘点描述 **v0.1.4** 包；v0.1.5 在此基础上新增 34 份许可材料（本文件、`THIRD_PARTY_GAPS.md` 与 `licenses/` 整目录随包），逐条目盘点随 G05 重生成。本文件中的 v0.1.4 包大小与条目数保留原值，未就地改写；v0.1.5 的落包改动与状态更新见[缺口清单](THIRD_PARTY_GAPS.md)（G02/G03 已关闭、G01 授权记录已随包待发布）。
 
 **当前状态：盘点已形成，发行许可核查尚未通过。** 本文件和 `licenses/` 是后续补正的工作成果，尚未进入已发布压缩包；不能据此声称旧包的缺口已经修复。已确认的缺口与待核实事项见 [缺口清单](THIRD_PARTY_GAPS.md)。
 
@@ -28,7 +28,7 @@
 | llama.cpp/ggml 二进制 | bin 内 38 个：20 DLL + 18 EXE；b7798 | 全部与官方 Vulkan x64 包字节一致；MIT 及所含第三方条款 | 旧包未附 ggml 作者的 MIT 声明；阻断，待打包补正 |
 | OpenMP | bin 内另有 `libomp140.x86_64.dll` | 与官方包相同；文件元数据为 LLVM、FileVersion `20140926`、ProductVersion `5.0` | 精确源版本及适用条款未确定；不能从文件名推定 LLVM 14 |
 | llama-server 嵌入内容 | 已分发 `llama-server.exe` | b7798 CMake 将 `index.html.gz` 等嵌入目标程序；来源树有前端依赖与 cpp-httplib | 依赖许可范围待审；已取 cpp-httplib MIT。仅补主 LICENSE 不代表其余静态内容全覆盖 |
-| Qwen3-TTS-GGUF 转换运行时源码 | 27 个文件，固定提交见逐文件表 | `Custom permission — GitHub issue #31`；26 个仅换行归一化后一致；`inference/llama.py` 有修改，对应本项目日志补丁 | **授权记录已随包，待发布**：作者本人公开授权，见 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`；该记录已纳入 v0.1.5 待发布包并通过最终 ZIP 复验，待实际对外发布后关闭。边界：原文只写 use，修改与再分发为整体解读，不是许可证文件 |
+| Qwen3-TTS-GGUF 转换运行时源码 | 27 个文件，固定提交见逐文件表 | MIT（根 `LICENSE`，`74feb581`；OWNER 对**明确提及 `dc8950d`** 的请求回复「已添加。」）+ issue #31 先前公开授权记录；26 个仅换行归一化后一致；`inference/llama.py` 有修改，对应本项目日志补丁 | **授权记录已随包，待发布**：见 `licenses/Qwen3-TTS-GGUF-74feb58-LICENSE.txt` 与 `licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`；已纳入 v0.1.5 待发布包并通过最终 ZIP 复验，待实际对外发布后关闭 |
 | 风格试听 | 45 个 MP3 + 1 个 manifest | 45/45 与工作区音频哈希一致；维护者确认全部由项目 CustomVoice 生成 | 来源声明已记录；原始 seed、模型/运行时哈希及完整生成参数未闭合 |
 | 图片 | 5 个：JPG、PNG 和 ICO | 维护者确认四个 JPG/PNG 自制或通过生成工具制作 | `favicon.ico` 未单独确认；工具条款及必要来源记录待补 |
 | 数据与音色元数据 | `data/zh_confusion.tsv`、`bashi_tts_kernel/speakers.json` | 项目专用表和目录；上游模型标识与实际参考音频权利不能混同 | 词表及描述来源记录待补 |
@@ -37,7 +37,7 @@
 
 18 个 bin EXE 合计 66,450,432 B（约 63.37 MiB）。是否可以删减需要调用路径和打包验收，本次不删除，也不把“未使用”本身当作违反许可的证据。无需的程序仍可能扩大分发审查范围。
 
-Qwen3-TTS-GGUF 固定树内存在 `Qwen3-TTS-main/LICENSE`、`ref/llama.cpp/LICENSE` 等嵌套文件，但没有证据表明它们给转换运行时的全部原创代码授权。本项目不以补一份 Qwen 或 llama.cpp 许可证替代这项缺口。[源码差异](licenses/inventory/upstream-source-comparison.json) · [固定树许可路径](licenses/inventory/upstream-license-paths.json)
+Qwen3-TTS-GGUF 固定树内存在 `Qwen3-TTS-main/LICENSE`、`ref/llama.cpp/LICENSE` 等嵌套文件；上游作者本人已于 2026-09-19 在仓库根目录加入 MIT（`74feb581`，原文随 v0.1.5 包收录）。根目录 MIT 覆盖作者原创代码；嵌套的 Qwen/llama.cpp 等第三方许可证仍各自适用于各自组件，不因根目录 MIT 而被取代。[源码差异](licenses/inventory/upstream-source-comparison.json) · [固定树许可路径](licenses/inventory/upstream-license-paths.json)
 
 ## B. 首次准备或用户操作时下载
 
