@@ -96,6 +96,19 @@ Use this checklist for every tagged release.
   `scripts/build_portable_zip.ps1`; run `git add` before building). The final ZIP's
   SHA-256 is recorded in the out-of-package `.sha256` file and the acceptance report —
   never inside the packaged documents.
+- **Release asset gate.** Count only **manually uploaded** attachments: exactly one product
+  ZIP and one `.sha256` sidecar per platform. Gitee additionally lists two
+  platform-generated source archives (`<tag>.zip`, `<tag>.tar.gz`, served from
+  `/archive/refs/tags/`); they are not uploads, cannot be removed, and are excluded from
+  this count. GitHub keeps the equivalent archives in `zipballUrl`/`tarballUrl` and does not
+  list them under `assets`, so the two platforms report different totals for the same
+  release (v0.1.5: GitHub 2, Gitee 4). Do not read the difference as a stray upload.
+- **Gitee mirror gate.** Gitee is a GitHub→Gitee **pull mirror**, not a push target, and the
+  Gitee API exposes no mirror/import/sync endpoint — so the mirror step cannot be rehearsed
+  in a throwaway canary repository. Before creating anything on Gitee, compare the two
+  remotes' refs anonymously, line by line: `heads` and `tags` must match, and for an
+  annotated tag both the tag object and its peeled commit must match. Stop if they differ;
+  do not create the Gitee release to "force" a sync.
 - **Third-party audio gate.** `static/audio/style_previews/` is the only audio directory the
   packaging script ships, and it is copied by a plain recursive filesystem copy
   (`Copy-RelativeDirectory` in `scripts/build_portable_zip.ps1`). That copy does not consult git,
