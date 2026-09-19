@@ -3,11 +3,11 @@
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**Version:** 0.1.4
+**Version:** 0.1.5
 
 A fully offline desktop web app for high-quality text-to-speech and speech-to-text. After the one-time first-launch download, **everything runs on your own machine** — TTS synthesis, audio export, transcription, and storage. No audio data ever leaves your computer.
 
@@ -18,7 +18,17 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 ---
 
-## 🆕 What's New in v0.1.4
+## 🆕 What's New in v0.1.5
+
+- **Complete third-party license materials now ship inside the package:** `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the entire `licenses/` directory — 34 files in total — including the upstream Qwen3-TTS-GGUF conversion runtime's MIT license text.
+- **UI footer license wording corrected:** it now reads "project code: MIT; models and third-party components follow their respective license terms" and no longer makes a blanket license promise for the whole distribution.
+- **Export filenames corrected.**
+- **Quick Start launch instructions corrected.**
+- **Build-time license pack gate added:** the license texts inside every release package are verified against the repository.
+
+---
+
+## What's New in v0.1.4
 
 - **Faster first synthesis:** full-path TTS warmup now starts asynchronously when the UI loads, using a throwaway synthesis rather than model loading alone. The UI shows a neutral warming state; an early request waits for warmup instead of failing.
 - **Fixed the PDF user guide:** the bundled manual no longer carries broken internal links that pointed at directories on the build machine. All links in the manual are now public HTTPS addresses.
@@ -165,7 +175,7 @@ Full log paths: `bashi-privacy-app\app.log` and `bashi-privacy-app\launch_log.tx
 ## 📦 What's in the Zip
 
 ```
-bashi-voice-factory-privacy-v0.1.4/
+bashi-voice-factory-privacy-v0.1.5/
 ├── Start_启动.bat                                       ← double-click here
 ├── Start_CPU_only_仅CPU启动.bat                         ← force CPU mode (entry-level iGPU A/B)
 ├── README.md                                            ← this file

@@ -3,11 +3,11 @@
 # 巴适声工厂 · 隐私版 (Bashi Voice Factory Privacy Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**版本：** 0.1.4
+**版本：** 0.1.5
 
 完全离线运行的本地语音工厂网页应用。首次启动联网下载完依赖与模型之后，**所有文字转语音、语音转文字、音频生成、文件保存都在你自己的电脑上完成**，没有任何音频数据上传云端。
 
@@ -18,7 +18,17 @@
 
 ---
 
-## 🆕 v0.1.4 更新内容
+## 🆕 v0.1.5 更新内容
+
+- **发行包内首次附带完整第三方许可材料：** `THIRD_PARTY.md`、`THIRD_PARTY_GAPS.md` 与 `licenses/` 整目录，共 34 份（含上游 Qwen3-TTS-GGUF 转换运行时的 MIT 原文）。
+- **界面页脚许可表述修正：** 改为「项目代码 MIT；模型与第三方组件遵循各自许可条款」，不再对整个发行包作统一授权承诺。
+- **导出文件名修正。**
+- **快速开始的启动说明修正。**
+- **构建期新增许可材料落包门禁：** 确保每次发行包内的许可原文与仓库一致。
+
+---
+
+## v0.1.4 更新内容
 
 - **首次合成更快：** 界面加载时即异步预热完整 TTS 链路，用一次丢弃式合成代替单纯加载模型。界面显示中性的预热状态；预热期间的早到请求会等待，而不是直接失败。
 - **修复 PDF 使用手册：** 随包分发的手册不再带有指向构建机器本地目录的失效内链，手册内所有链接均为公开 HTTPS 地址。
@@ -165,7 +175,7 @@
 ## 📦 zip 包目录结构
 
 ```
-bashi-voice-factory-privacy-v0.1.4/
+bashi-voice-factory-privacy-v0.1.5/
 ├── Start_启动.bat                                       ← 双击这里
 ├── Start_CPU_only_仅CPU启动.bat                         ← 强制 CPU 模式（入门集显 A/B 对比用）
 ├── README.md                                            ← 英文文档
