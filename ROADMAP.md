@@ -12,7 +12,7 @@
 | **v0.1.2** | NVIDIA detection and backend robustness (Windows) | Released 2026-06-15 | shipped |
 | **v0.1.3** | Windows reliability, logging, streaming UX, and STT quality/safety | Released 2026-08-03 | shipped |
 | **v0.1.4** | Startup warmup, PDF user-guide fix and build guard, Gitee mirror | Released 2026-09 | shipped |
-| **v0.1.5** | Third-party license materials shipped inside the package | Ready for release | ready for release |
+| **v0.1.5** | Third-party license materials shipped inside the package | Released 2026-09-19 | shipped |
 | **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
@@ -209,7 +209,7 @@ Approach detail: when an NVIDIA user launches v0.1.1, the backend chip reports `
 
 ---
 
-## v0.1.5 — Third-party license materials in the package (Windows patch, ready for release)
+## v0.1.5 — Third-party license materials in the package (Windows patch, shipped 2026-09-19)
 
 - **License materials now ship inside the package.** `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the whole `licenses/` directory — 34 files in total — are placed at the extracted package root, including the upstream Qwen3-TTS-GGUF conversion runtime's MIT license text.
 - **Build-time license pack gate.** The packaging script compares every staged license file with its git index blob (CRLF→LF normalised), requires both inventories at the package root, and fails the build on any mismatch, so shipped license texts cannot drift from the repository.
@@ -371,4 +371,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-09 (v0.1.5 third-party license materials prepared and ready for release; v0.1.4 warmup, user-guide fix, and Gitee mirror shipped; Base + CustomVoice composition recorded). Next review: before v0.2 cross-platform work.*
+*Last updated: 2026-09-19 (v0.1.5 third-party license materials shipped; v0.1.4 warmup, user-guide fix, and Gitee mirror shipped; Base + CustomVoice composition recorded). Next review: before v0.2 cross-platform work.*

@@ -6,14 +6,13 @@
 
 ## 已取得授权、待发布（原阻断项）
 
-| 编号 | 具体对象 | 依据；两段式边界 |
-|---|---|---|
-| G01 | `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/*` 及随包 readme/requirements | 上游已于 2026-09-19 采用 MIT（`74feb581`）。MIT 原文与 issue 授权演进记录**已纳入受门禁控制的 v0.1.5 发行材料范围**；G01 待该版本**实际对外发布**后关闭。**授权记录已随包，待发布**：阶段 1「授权说明进入仓库」已完成；阶段 2「授权说明随发行包分发」尚未完成——材料已纳入 v0.1.5 本地构建并通过最终 ZIP 复验，但 v0.1.5 尚未对外发布；已发布的 v0.1.0–v0.1.4 旧 ZIP 不含这些材料。关闭条件里的「进入发行包」指实际对外分发，发布动作不在本单，因此此处不写为关闭 |
+本区块原仅含 G01；G01 已随 v0.1.5 实际对外分发关闭，见下方「已关闭」区块。
 
 ## 已关闭（v0.1.5）
 
 | 编号 | 具体对象 | 关闭依据 |
 |---|---|---|
+| G01 | `vulkan_backend_spike/Qwen3-TTS-GGUF/qwen3_tts_gguf/inference/*` 及随包 readme/requirements | **MIT 原文与授权演进记录已随 v0.1.5 发行包实际对外分发**（2026-09-19）。下载地址：GitHub <https://github.com/gtree965/bashi-voice-factory-privacy/releases/download/v0.1.5/bashi-voice-factory-privacy-v0.1.5-windows.zip> · Gitee <https://gitee.com/gtree965/bashi-voice-factory-privacy/releases/download/v0.1.5/bashi-voice-factory-privacy-v0.1.5-windows.zip>；ZIP SHA-256 `505ea10e525f6bc5ebadf5f0b8829da5d70e7cc94b931f8ffad9afbee241b8e9`。两平台附件均已匿名下载复核（HTTP 200，字节与哈希一致）。材料：`licenses/Qwen3-TTS-GGUF-74feb58-LICENSE.txt`、`licenses/upstream-qwen3-tts-gguf-permission-2026-09-16.md`（授权性质由 MIT 与 issue #31 授权并存承载；关闭条件是实际对外分发） |
 | G02 | bin 内 llama/ggml DLL、EXE | 原文已随包（`licenses/llama.cpp-b7798-LICENSE.txt`、`licenses/cpp-httplib-b7798-LICENSE.txt`）；构建门禁已入库（`Assert-StagedLicenseDocsMatchGit`）；最终 ZIP 已复验（`bashi-voice-factory-privacy-v0.1.5-windows.zip`） |
 | G03 | Python 目录 `libcrypto-3.dll`、`libssl-3.dll` | 原文已随包（`licenses/OpenSSL-3.0.16-LICENSE.txt`）；构建门禁已入库（`Assert-StagedLicenseDocsMatchGit`）；最终 ZIP 已复验（`bashi-voice-factory-privacy-v0.1.5-windows.zip`） |
 
@@ -63,4 +62,4 @@
 
 ## 建议下一步
 
-G01 的授权记录已纳入 v0.1.5 待发布包并通过最终 ZIP 复验，待实际对外发布后关闭。G02/G03 已随 v0.1.5 落包并关闭（原文随包、构建门禁入库、最终 ZIP 已复验）。G04 先取得精确条款；G05 在隔离环境重建安装记录与依赖清单，并重生成上节的陈旧条目。模型与 CUDA 继续按原始模型、转换产物、实际下载文件三层追溯。本单只做许可材料落包与状态更新，未联系上游、未替换组件、未删减文件。
+G01 已随 v0.1.5 实际对外分发关闭（2026-09-19；依据见上表，含两平台下载地址与 ZIP SHA-256）。G02/G03 已随 v0.1.5 落包并关闭（原文随包、构建门禁入库、最终 ZIP 已复验，v0.1.5 已发布）。G04 先取得精确条款；G05 在隔离环境重建安装记录与依赖清单，并重生成上节的陈旧条目。模型与 CUDA 继续按原始模型、转换产物、实际下载文件三层追溯。本单只做许可材料落包与状态更新，未联系上游、未替换组件、未删减文件。
