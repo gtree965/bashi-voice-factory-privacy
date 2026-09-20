@@ -5,6 +5,12 @@ from pathlib import Path
 
 
 SPIKE_ROOT = Path(__file__).resolve().parents[2] / "vulkan_backend_spike" / "Qwen3-TTS-GGUF"
+LLAMA_MODULE = SPIKE_ROOT / "qwen3_tts_gguf" / "inference" / "llama.py"
+if not LLAMA_MODULE.is_file():
+    raise unittest.SkipTest(
+        "Optional integration component qwen3_tts_gguf/inference/llama.py is missing at "
+        f"{LLAMA_MODULE}; Qwen3-TTS-GGUF integration coverage was not run."
+    )
 sys.path.insert(0, str(SPIKE_ROOT))
 
 from qwen3_tts_gguf.inference import llama  # noqa: E402

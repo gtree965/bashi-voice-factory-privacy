@@ -4,6 +4,12 @@ from pathlib import Path
 
 
 KERNEL_ROOT = Path(__file__).resolve().parents[2] / "LocalBashiVoiceFactory"
+KERNEL_MODULE = KERNEL_ROOT / "bashi_tts_core.py"
+if not KERNEL_MODULE.is_file():
+    raise unittest.SkipTest(
+        "Optional integration component bashi_tts_core.py is missing at "
+        f"{KERNEL_MODULE}; LocalBashiVoiceFactory integration coverage was not run."
+    )
 if str(KERNEL_ROOT) not in sys.path:
     sys.path.insert(0, str(KERNEL_ROOT))
 
