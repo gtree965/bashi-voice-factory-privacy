@@ -1,0 +1,3 @@
+-r requirements.txt
+# Pinned test dependency for Bashi Voice Factory Privacy Edition.
+pytest==9.1.1
