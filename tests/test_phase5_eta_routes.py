@@ -41,7 +41,8 @@ class Phase5ETARouteTests(unittest.TestCase):
         tts_routes._BENCHMARK_FUTURE = None
 
     def test_system_info_returns_backend_chip_payload(self):
-        with patch.dict("os.environ", {"USE_GGUF_BACKEND": "1"}, clear=False):
+        with patch.dict("os.environ", {"USE_GGUF_BACKEND": "1"}, clear=False), \
+                patch("tts_routes.detect_gguf_accelerator", return_value="vulkan"):
             with patch("tts_routes._probe_cache_key", return_value={
                 "gpu_vendor": "amd",
                 "gpu_device_identity": "Radeon RX 590",

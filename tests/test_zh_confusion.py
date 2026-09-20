@@ -53,6 +53,7 @@ class ZhConfusionTests(unittest.TestCase):
         stream.result = result
 
         with patch.object(engine, "is_loaded", return_value=True), \
+                patch.object(engine, "_resolve_vad_model_path", return_value=Path("silero_vad.onnx")), \
                 patch("wave.open") as wave_open, \
                 patch("stt_engine.sherpa_onnx") as sherpa, \
                 patch("engines.sherpa_sensevoice.apply_zh_confusions", return_value="智谱发布通义千问。") as correct:
