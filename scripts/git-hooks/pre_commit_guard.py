@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from check_pdf_links import (  # noqa: E402
@@ -39,11 +40,16 @@ TRACE_ALLOWLIST = frozenset((
     ".gitignore",
 ))
 
-# A push publishes history that cannot be taken back, so every commit and
-# annotated tag headed for a remote is checked against this identity.
+# A push to an official repository publishes history that cannot be taken
+# back, so its commits and annotated tags are checked against this identity.
 EXPECTED_IDENTITY = ("Alex Li", "ncorecpu@gmail.com")
+OFFICIAL_REPOSITORY_ADDRESSES = (
+    ("github.com", "gtree965/bashi-voice-factory-privacy"),
+    ("gitee.com", "gtree965/bashi-voice-factory-privacy"),
+)
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 TAGGER_LINE = re.compile(r"^(.*) <([^<>]*)> \d+ [+-]\d{4}$")
+SCP_REMOTE = re.compile(r"^(?:[^@/:\s]+@)?([^/:\s]+):(.+)$")
 
 _CONTENT_ISSUES = {
     "ignored": "Ignored staged path: {path}. Unstage it; keep local-only files private.",
@@ -258,6 +264,46 @@ def read_push_records(data: bytes | str) -> list[tuple[str, str, str, str]]:
     return records
 
 
+def normalized_repository_address(remote_url: str | None) -> tuple[str, str] | None:
+    """Return a normalized host/path pair for supported Git remote URL forms."""
+    if remote_url is None or not remote_url.strip():
+        return None
+    value = remote_url.strip()
+    if "://" in value:
+        try:
+            parsed = urlsplit(value)
+            if parsed.scheme.casefold() not in ("git", "http", "https", "ssh"):
+                return None
+            if not parsed.hostname or parsed.query or parsed.fragment:
+                return None
+            parsed.port  # Validate an optional explicit port.
+        except ValueError:
+            return None
+        host, path = parsed.hostname.casefold(), unquote(parsed.path)
+    else:
+        match = SCP_REMOTE.fullmatch(value)
+        if match is None:
+            return None
+        host, path = match.group(1).casefold(), unquote(match.group(2))
+
+    path = path.strip("/")
+    parts = path.split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    owner, repository = parts
+    if repository.casefold().endswith(".git"):
+        repository = repository[:-4]
+    if not repository:
+        return None
+    return host, f"{owner}/{repository}".casefold()
+
+
+def is_official_repository(remote_url: str | None) -> bool | None:
+    """Return True/False for parsed targets and None when the target is unknown."""
+    address = normalized_repository_address(remote_url)
+    return None if address is None else address in OFFICIAL_REPOSITORY_ADDRESSES
+
+
 def peeled_commit(root: Path, rev: str) -> str:
     return os.fsdecode(git(root, "rev-parse", "--verify", rev + "^{commit}")).strip()
 
@@ -306,15 +352,16 @@ def tag_details(root: Path, tag_sha: str):
 
 
 def check_commit(root: Path, commit: str, terms: tuple[str, ...],
-                 identity: tuple[str, str] = EXPECTED_IDENTITY) -> list[str]:
+                 identity: tuple[str, str] | None = EXPECTED_IDENTITY) -> list[str]:
     """Identity, message and content of one commit that is not public yet."""
     short = commit[:8]
     issues = []
     author, committer, parent = commit_details(root, commit)
-    if author != identity:
-        issues.append(f"Unexpected author on commit {short}.")
-    if committer != identity:
-        issues.append(f"Unexpected committer on commit {short}.")
+    if identity is not None:
+        if author != identity:
+            issues.append(f"Unexpected author on commit {short}.")
+        if committer != identity:
+            issues.append(f"Unexpected committer on commit {short}.")
     message = decoded(git(root, "show", "-s", "--format=%B", commit))
     issues.extend(f"{issue} (commit {short})"
                   for issue in check_message(message, terms, skip_comments=False))
@@ -328,12 +375,12 @@ def check_commit(root: Path, commit: str, terms: tuple[str, ...],
 
 
 def check_tag(root: Path, tag_sha: str, terms: tuple[str, ...],
-              identity: tuple[str, str] = EXPECTED_IDENTITY) -> list[str]:
+              identity: tuple[str, str] | None = EXPECTED_IDENTITY) -> list[str]:
     """Identity and message of one annotated tag object that is not public yet."""
     name, tagger, message = tag_details(root, tag_sha)
     label = name if not contains_term(name, terms) else "<withheld tag>"
     issues = []
-    if tagger != identity:
+    if identity is not None and tagger != identity:
         issues.append(f"Unexpected tagger on annotated tag {label}.")
     issues.extend(f"{issue} (tag {label})"
                   for issue in check_message(message, terms, skip_comments=False))
@@ -342,14 +389,22 @@ def check_tag(root: Path, tag_sha: str, terms: tuple[str, ...],
 
 def check_pre_push(root: Path, records: list[tuple[str, str, str, str]],
                    terms_path: Path | None = None,
-                   identity: tuple[str, str] = EXPECTED_IDENTITY) -> list[str]:
+                   identity: tuple[str, str] | None = EXPECTED_IDENTITY,
+                   remote_name: str | None = None,
+                   remote_url: str | None = None) -> list[str]:
     """Gate everything a push would publish: identity, message and content.
 
     A deletion carries an all-zero local SHA and publishes nothing, so it is
     skipped. Lightweight tags have no tag object and are covered by the commit
-    they point at; annotated tags are checked in their own right.
+    they point at; annotated tags are checked in their own right. Identity is
+    enforced for official targets and unknown targets, while valid fork URLs
+    disable only the identity checks.
     """
     terms = load_terms(root, terms_path)
+    # Git's remote name is deliberately not a trust signal: origin can be a
+    # contributor's fork. A missing or malformed URL keeps the default gate.
+    if is_official_repository(remote_url) is False:
+        identity = None
     tips, tags = [], []
     for _local_ref, local_sha, _remote_ref, _remote_sha in records:
         if not local_sha.strip("0"):
@@ -379,7 +434,12 @@ def main(argv: list[str] | None = None) -> int:
             issues = check_message(message, load_terms(root))
         elif args[0] == "--pre-push" and len(args) in (2, 3):
             stream = getattr(sys.stdin, "buffer", sys.stdin)
-            issues = check_pre_push(root, read_push_records(stream.read()))
+            issues = check_pre_push(
+                root,
+                read_push_records(stream.read()),
+                remote_name=args[1],
+                remote_url=args[2] if len(args) == 3 else None,
+            )
         else:
             print("[commit guard] usage: pre_commit_guard.py [--commit-msg <file>"
                   " | --pre-push <remote> [<url>]]", file=sys.stderr)

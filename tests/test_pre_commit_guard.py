@@ -1,5 +1,6 @@
 """Exercise staged-change protection with synthetic terms in disposable repos."""
 
+import io
 import os
 from pathlib import Path
 import re
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/git-hooks"))
@@ -313,6 +315,18 @@ class PrePushTests(unittest.TestCase):
     """
 
     ZERO = "0" * 40
+    PLATFORM_URLS = (
+        (
+            "GitHub",
+            "https://github.com/gtree965/bashi-voice-factory-privacy.git",
+            "https://github.com/contributor/bashi-voice-factory-privacy.git",
+        ),
+        (
+            "Gitee",
+            "https://gitee.com/gtree965/bashi-voice-factory-privacy.git",
+            "https://gitee.com/contributor/bashi-voice-factory-privacy.git",
+        ),
+    )
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -369,8 +383,146 @@ class PrePushTests(unittest.TestCase):
         return [(local_ref, local_sha, remote_ref or local_ref,
                  self.ZERO if remote_sha is None else remote_sha)]
 
-    def check(self, records):
-        return guard.check_pre_push(self.root, records, self.terms)
+    def check(self, records, remote_name=None, remote_url=None):
+        return guard.check_pre_push(
+            self.root,
+            records,
+            self.terms,
+            remote_name=remote_name,
+            remote_url=remote_url,
+        )
+
+    def test_official_url_normalization_covers_supported_git_forms(self):
+        forms = {
+            "GitHub": (
+                "https://github.com/gtree965/bashi-voice-factory-privacy",
+                "https://user@GITHUB.COM:443/GTREE965/BASHI-VOICE-FACTORY-PRIVACY.git/",
+                "git@github.com:gtree965/bashi-voice-factory-privacy.git",
+                "ssh://git@github.com:22/gtree965/bashi-voice-factory-privacy.git",
+            ),
+            "Gitee": (
+                "https://gitee.com/gtree965/bashi-voice-factory-privacy",
+                "https://user@GITEE.COM:443/GTREE965/BASHI-VOICE-FACTORY-PRIVACY.git/",
+                "git@gitee.com:gtree965/bashi-voice-factory-privacy.git",
+                "ssh://git@gitee.com:22/gtree965/bashi-voice-factory-privacy.git",
+            ),
+        }
+        for platform, urls in forms.items():
+            for url in urls:
+                with self.subTest(platform=platform, url=url):
+                    self.assertIs(guard.is_official_repository(url), True)
+
+    def test_origin_named_fork_disables_commit_and_tag_identity_on_both_platforms(self):
+        base = self.baseline()
+        head = self.commit(
+            "work.txt",
+            "ordinary\n",
+            "build: ordinary",
+            env={"GIT_AUTHOR_NAME": "Someone", "GIT_COMMITTER_EMAIL": "someone@example.invalid"},
+        )
+        self.git("tag", "-a", "fork-probe", "-m", "ordinary release notes", base,
+                 env={"GIT_COMMITTER_NAME": "Someone"})
+        tag_sha = self.git("rev-parse", "fork-probe").stdout.strip().decode()
+        records = self.records(head, remote_sha=base) + self.records(
+            tag_sha, "refs/tags/fork-probe", remote_ref="refs/tags/fork-probe")
+        for platform, _official, fork in self.PLATFORM_URLS:
+            with self.subTest(platform=platform):
+                self.assertEqual(
+                    self.check(records, remote_name="origin", remote_url=fork),
+                    [],
+                )
+
+    def test_non_origin_official_keeps_commit_identity_gate_on_both_platforms(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: ordinary",
+                           env={"GIT_AUTHOR_NAME": "Someone"})
+        for platform, official, _fork in self.PLATFORM_URLS:
+            with self.subTest(platform=platform):
+                issues = self.check(
+                    self.records(head, remote_sha=base),
+                    remote_name="upstream",
+                    remote_url=official,
+                )
+                self.assertTrue(any("author" in issue for issue in issues))
+
+    def test_missing_and_malformed_urls_fail_closed(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: ordinary",
+                           env={"GIT_AUTHOR_NAME": "Someone"})
+        cases = (
+            ("missing", None),
+            ("GitHub missing path", "https://github.com"),
+            ("Gitee missing path", "https://gitee.com"),
+            ("malformed", "not a remote url"),
+        )
+        for label, url in cases:
+            with self.subTest(case=label):
+                issues = self.check(
+                    self.records(head, remote_sha=base),
+                    remote_name="origin",
+                    remote_url=url,
+                )
+                self.assertTrue(any("author" in issue for issue in issues))
+
+    def test_official_targets_check_commit_and_tag_identity_on_both_platforms(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: ordinary",
+                           env={"GIT_AUTHOR_NAME": "Someone",
+                                "GIT_COMMITTER_EMAIL": "someone@example.invalid"})
+        self.git("tag", "-a", "official-probe", "-m", "ordinary release notes", base,
+                 env={"GIT_COMMITTER_NAME": "Someone"})
+        tag_sha = self.git("rev-parse", "official-probe").stdout.strip().decode()
+        records = self.records(head, remote_sha=base) + self.records(
+            tag_sha, "refs/tags/official-probe", remote_ref="refs/tags/official-probe")
+        for platform, official, _fork in self.PLATFORM_URLS:
+            with self.subTest(platform=platform):
+                issues = self.check(records, remote_name="mirror", remote_url=official)
+                self.assertTrue(any("author" in issue for issue in issues))
+                self.assertTrue(any("committer" in issue for issue in issues))
+                self.assertTrue(any("tagger" in issue for issue in issues))
+
+    def test_fork_targets_still_reject_messages_and_content_on_both_platforms(self):
+        base = self.baseline()
+        head = self.commit("notes.txt", "ChatGPT wrote this\n", "build: drafted by CodeBuddy")
+        for platform, _official, fork in self.PLATFORM_URLS:
+            with self.subTest(platform=platform):
+                issues = self.check(
+                    self.records(head, remote_sha=base),
+                    remote_name="origin",
+                    remote_url=fork,
+                )
+                self.assertTrue(any("message" in issue for issue in issues))
+                self.assertTrue(any("residue" in issue for issue in issues))
+
+    def test_cli_passes_remote_and_url_to_policy(self):
+        urls = [url for _platform, official, fork in self.PLATFORM_URLS
+                for url in (official, fork)]
+        urls.append(None)
+        for url in urls:
+            with self.subTest(url=url), \
+                    patch.object(guard, "git", return_value=(str(self.root) + "\n").encode()), \
+                    patch.object(guard, "read_push_records", return_value=[]), \
+                    patch.object(guard, "check_pre_push", return_value=[]) as check_policy, \
+                    patch.object(sys, "stdin", io.BytesIO(b"")):
+                args = ["--pre-push", "origin"] + ([] if url is None else [url])
+                self.assertEqual(guard.main(args), 0)
+                check_policy.assert_called_once_with(
+                    self.root,
+                    [],
+                    remote_name="origin",
+                    remote_url=url,
+                )
+
+    def test_near_match_targets_are_not_official_on_both_platforms(self):
+        cases = (
+            "https://github.com.evil.example/gtree965/bashi-voice-factory-privacy",
+            "https://github.com/gtree965/bashi-voice-factory-privacy-fork",
+            "https://gitee.com.evil.example/gtree965/bashi-voice-factory-privacy",
+            "https://gitee.com/gtree965/bashi-voice-factory-privacy-fork",
+        )
+        for url in cases:
+            with self.subTest(url=url):
+                self.assertIs(guard.is_official_repository(url), False)
 
     def test_clean_commit_on_a_published_baseline_passes(self):
         base = self.baseline()
