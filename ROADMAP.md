@@ -63,6 +63,7 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
 - Entry-level iGPU (Intel N100/N305) cannot do long-form audio in reasonable time
 - NPU silicon (Snapdragon X / Lunar Lake / Ryzen AI 300) unused
 - ARM64 Windows unsupported (x64 emulation only)
+- **Source bootstrap known limitation**: a fresh clone cannot build the portable package or run the release checks without inputs that are not distributed with the source (the embedded Python runtime, the model weights, and one runtime directory that lives outside the repository). [`CONTRIBUTING.md`](CONTRIBUTING.md) states what does run from a clone today.
 
 ---
 
@@ -371,4 +372,4 @@ Open an issue on <https://github.com/gtree965/bashi-voice-factory-privacy/issues
 
 ---
 
-*Last updated: 2026-09-19 (v0.1.5 third-party license materials shipped; v0.1.4 warmup, user-guide fix, and Gitee mirror shipped; Base + CustomVoice composition recorded). Next review: before v0.2 cross-platform work.*
+*Last updated: 2026-09-21 (contributing guide, issue and pull-request templates, and maintenance notes added; v0.1.5 third-party license materials shipped; v0.1.4 warmup, user-guide fix, and Gitee mirror shipped; Base + CustomVoice composition recorded). Next review: before v0.2 cross-platform work.*
