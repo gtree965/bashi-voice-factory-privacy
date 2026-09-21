@@ -14,6 +14,7 @@
 **作者：** Alex Li (ncorecpu@gmail.com)
 **许可：** [MIT License](LICENSE)
 **源码：** <https://github.com/gtree965/bashi-voice-factory-privacy> · <https://gitee.com/gtree965/bashi-voice-factory-privacy>（国内镜像）
+**贡献指南：** <https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/CONTRIBUTING.md>
 **下载：** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [Gitee](https://gitee.com/gtree965/)（国内推荐）
 
 ---
@@ -209,4 +210,4 @@ bashi-voice-factory-privacy-v0.1.5/
 
 **Alex Li** — ncorecpu@gmail.com
 
-欢迎通过 GitHub release 页面或邮件提交 issue、反馈或功能建议。
+欢迎通过 [GitHub Issues](https://github.com/gtree965/bashi-voice-factory-privacy/issues) 提交 issue、反馈或功能建议。

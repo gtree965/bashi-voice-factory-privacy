@@ -14,6 +14,7 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 **Author:** Alex Li (ncorecpu@gmail.com)
 **License:** [MIT License](LICENSE)
 **Source code:** <https://github.com/gtree965/bashi-voice-factory-privacy> · <https://gitee.com/gtree965/bashi-voice-factory-privacy> (mirror for mainland China)
+**Contributing:** <https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/CONTRIBUTING.md>
 **Download:** [GitHub Releases](https://github.com/gtree965/bashi-voice-factory-privacy/releases) · [Gitee](https://gitee.com/gtree965/) (recommended in mainland China)
 
 ---
@@ -209,4 +210,4 @@ Bundled third-party components retain their original licenses:
 
 **Alex Li** — ncorecpu@gmail.com
 
-Issues, feedback, and feature requests welcome via the GitHub release page or email.
+Issues, feedback, and feature requests welcome via [GitHub Issues](https://github.com/gtree965/bashi-voice-factory-privacy/issues).
