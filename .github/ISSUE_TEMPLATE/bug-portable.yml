@@ -1,0 +1,75 @@
+name: Portable package bug
+description: Report a problem with a released portable package (the ZIP from GitHub Releases or Gitee).
+title: "[Portable] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for problems with a **released portable package**: the ZIP, the launchers, or the app running from it.
+        本表单用于**发行便携包**（ZIP、启动器、从包里运行的应用）的问题。
+        For problems from a **source checkout** (or while running the test suite), use the "Source or test bug" form instead.
+        从**源码**运行或跑测试时的问题，请改用「Source or test bug」表单。
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: Numbered steps, starting from a clean extract of the ZIP. / 从干净解压开始的编号步骤。
+      placeholder: |
+        1. Extract the ZIP to ...
+        2. Double-click Start_启动.bat
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / What you expected
+      description: What you expected to happen. / 你期望发生什么。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为 / What happened instead
+      description: What actually happened, including any error text you saw. / 实际发生了什么，包括你看到的报错文字。
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Version
+      description: The value in the VERSION file inside the extracted package. / 解压包内 VERSION 文件里的值。
+      placeholder: "0.1.5"
+    validations:
+      required: true
+  - type: input
+    id: zip-sha256
+    attributes:
+      label: 便携包 ZIP 的 SHA-256 / ZIP SHA-256
+      description: >-
+        The value from the .sha256 file next to the ZIP. Its only purpose is to confirm which artifact you have.
+        / 与 ZIP 同目录的 .sha256 文件里那一串；用途只有一个：确认你拿到的是哪一份产物。
+      placeholder: "0123456789abcdef..."
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: 硬件与驱动 / GPU and driver
+      description: GPU model and driver version. / 显卡型号与驱动版本。
+      placeholder: "AMD RX 9060 XT, driver 25.x"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志片段（可选）/ Log excerpt (optional)
+      description: >-
+        ⚠️ 日志可能包含你输入的文字、文件名与本机路径。提交前请自行删除敏感内容。
+        ⚠️ Logs may contain your typed text, file names and local paths. Remove anything sensitive before posting.
+      placeholder: |
+        Paste only the lines around the error. / 只粘贴报错附近的一小段。
+    validations:
+      required: false

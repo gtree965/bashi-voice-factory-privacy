@@ -1,0 +1,54 @@
+name: Source or test bug
+description: Report a problem with running or testing the code from a source checkout.
+title: "[Source] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for problems from a **source checkout**, including running the test suite.
+        本表单用于**从源码**运行（或跑测试）时遇到的问题。
+        This form does **not** ask for a portable-package hash, a GPU or a driver: source and packaged paths are different.
+        本表单**不**要求便携包哈希、硬件或驱动信息——源码运行与便携包是两条路径。
+        See CONTRIBUTING.md for what a clone can run today.
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: Numbered steps, including the exact command you ran. / 编号步骤，并写上你实际执行的完整命令。
+      placeholder: |
+        1. python -m venv .venv
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / What you expected
+      description: What you expected to happen. / 你期望发生什么。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为 / What happened instead
+      description: What actually happened, including the full error text. / 实际发生了什么，包括完整报错文字。
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: 你基于哪个提交 / Commit you built on
+      description: Output of `git rev-parse --short HEAD`. / `git rev-parse --short HEAD` 的输出。
+      placeholder: "699ea3c"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本 / Python version
+      description: Output of `python --version`. / `python --version` 的输出。
+      placeholder: "3.12.10"
+    validations:
+      required: true

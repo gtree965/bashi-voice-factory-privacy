@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a change in behaviour or a new capability.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请描述**你想解决的问题**，而不是先给出方案。
+        本表单不要求硬件、驱动、日志或任何哈希——功能建议不需要这些。
+        Describe the problem you want solved. This form asks for no hardware, driver, logs or hashes.
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题 / What problem do you want solved
+      description: The situation that is painful today, with as much context as you can give. / 今天让人难受的场景，尽量给出上下文。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望的行为 / The behaviour you would like
+      description: What you would like to happen instead. A rough sketch is fine. / 你希望改成什么样，粗略描述即可。
+    validations:
+      required: true
+  - type: dropdown
+    id: willing
+    attributes:
+      label: 你是否愿意自己实现它 / Would you implement it yourself
+      description: Answering honestly does not affect whether the request is considered. / 如实回答即可，不影响请求是否被考虑。
+      options:
+        - 愿意，我可以提 PR / Yes, I can open a pull request
+        - 愿意，但需要指点 / Yes, but I would need guidance
+        - 不打算实现，只是建议 / No, just suggesting
+    validations:
+      required: true

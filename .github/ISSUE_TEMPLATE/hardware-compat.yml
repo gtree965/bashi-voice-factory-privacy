@@ -1,0 +1,60 @@
+name: Hardware compatibility report
+description: Report which acceleration path works, or does not work, on your hardware.
+title: "[Hardware] "
+# No labels on purpose: the repository has no hardware-specific label, and a missing label
+# is better than an inaccurate one.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请报告你的硬件上**实际走通的加速路径**（或失败情况）。
+        这些数据会进入 README 的硬件兼容性表，供其它用户参考。
+        Report which acceleration path actually works on your hardware; these reports feed the
+        hardware coverage table in the READMEs.
+  - type: input
+    id: gpu
+    attributes:
+      label: 显卡 / GPU
+      description: GPU model, or "CPU only" if there is no discrete GPU. / 显卡型号；没有独显就写「仅 CPU」。
+      placeholder: "AMD RX 9060 XT / NVIDIA RTX 5070 / Intel N100 iGPU"
+    validations:
+      required: true
+  - type: input
+    id: driver
+    attributes:
+      label: 驱动版本 / Driver version
+      description: GPU driver version reported by your system. / 系统里显示的显卡驱动版本。
+      placeholder: "25.10.2 / 610.47 / iris 32.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: 实际使用的后端 / Acceleration path used
+      description: What the app reports in its system panel, or what you picked manually. / 应用系统面板里显示的后端，或你手动选择的后端。
+      options:
+        - Vulkan (GGUF)
+        - DirectML (ONNX decoder)
+        - CUDA add-on (NVIDIA)
+        - CPU only / 仅 CPU
+        - Not sure / 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: launch-log
+    attributes:
+      label: launch_log.txt 片段 / launch_log.txt excerpt
+      description: >-
+        ⚠️ 日志可能包含你输入的文字、文件名与本机路径。提交前请自行删除敏感内容。
+        ⚠️ Logs may contain your typed text, file names and local paths. Remove anything sensitive before posting.
+      placeholder: |
+        Paste the backend-selection lines only. / 只粘贴后端选择相关的那几行即可。
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充说明（可选）/ Anything else (optional)
+      description: Speed you observed, errors, A/B comparisons. / 你观察到的速度、报错、A/B 对比。
+    validations:
+      required: false
