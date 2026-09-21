@@ -47,6 +47,10 @@ OFFICIAL_REPOSITORY_ADDRESSES = (
     ("github.com", "gtree965/bashi-voice-factory-privacy"),
     ("gitee.com", "gtree965/bashi-voice-factory-privacy"),
 )
+OFFICIAL_REPOSITORY_HOST_ALIASES = {
+    "www.github.com": "github.com",
+    "www.gitee.com": "gitee.com",
+}
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 TAGGER_LINE = re.compile(r"^(.*) <([^<>]*)> \d+ [+-]\d{4}$")
 SCP_REMOTE = re.compile(r"^(?:[^@/:\s]+@)?([^/:\s]+):(.+)$")
@@ -285,6 +289,12 @@ def normalized_repository_address(remote_url: str | None) -> tuple[str, str] | N
         if match is None:
             return None
         host, path = match.group(1).casefold(), unquote(match.group(2))
+
+    # A single trailing dot is the DNS root label. GitHub and Gitee also serve
+    # their repositories through the exact www aliases below.
+    if host.endswith("."):
+        host = host[:-1]
+    host = OFFICIAL_REPOSITORY_HOST_ALIASES.get(host, host)
 
     path = path.strip("/")
     parts = path.split("/")

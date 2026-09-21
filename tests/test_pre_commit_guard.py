@@ -397,12 +397,18 @@ class PrePushTests(unittest.TestCase):
             "GitHub": (
                 "https://github.com/gtree965/bashi-voice-factory-privacy",
                 "https://user@GITHUB.COM:443/GTREE965/BASHI-VOICE-FACTORY-PRIVACY.git/",
+                "https://www.github.com/gtree965/bashi-voice-factory-privacy.git",
+                "https://github.com./gtree965/bashi-voice-factory-privacy.git",
+                "git@www.github.com.:gtree965/bashi-voice-factory-privacy.git",
                 "git@github.com:gtree965/bashi-voice-factory-privacy.git",
                 "ssh://git@github.com:22/gtree965/bashi-voice-factory-privacy.git",
             ),
             "Gitee": (
                 "https://gitee.com/gtree965/bashi-voice-factory-privacy",
                 "https://user@GITEE.COM:443/GTREE965/BASHI-VOICE-FACTORY-PRIVACY.git/",
+                "https://www.gitee.com/gtree965/bashi-voice-factory-privacy.git",
+                "https://gitee.com./gtree965/bashi-voice-factory-privacy.git",
+                "git@www.gitee.com.:gtree965/bashi-voice-factory-privacy.git",
                 "git@gitee.com:gtree965/bashi-voice-factory-privacy.git",
                 "ssh://git@gitee.com:22/gtree965/bashi-voice-factory-privacy.git",
             ),
@@ -442,6 +448,25 @@ class PrePushTests(unittest.TestCase):
                     self.records(head, remote_sha=base),
                     remote_name="upstream",
                     remote_url=official,
+                )
+                self.assertTrue(any("author" in issue for issue in issues))
+
+    def test_official_host_aliases_keep_identity_gate_on_both_platforms(self):
+        base = self.baseline()
+        head = self.commit("work.txt", "ordinary\n", "build: ordinary",
+                           env={"GIT_AUTHOR_NAME": "Someone"})
+        cases = {
+            "GitHub www": "https://www.github.com/gtree965/bashi-voice-factory-privacy.git",
+            "GitHub root dot": "https://github.com./gtree965/bashi-voice-factory-privacy.git",
+            "Gitee www": "https://www.gitee.com/gtree965/bashi-voice-factory-privacy.git",
+            "Gitee root dot": "https://gitee.com./gtree965/bashi-voice-factory-privacy.git",
+        }
+        for label, url in cases.items():
+            with self.subTest(case=label):
+                issues = self.check(
+                    self.records(head, remote_sha=base),
+                    remote_name="origin",
+                    remote_url=url,
                 )
                 self.assertTrue(any("author" in issue for issue in issues))
 
@@ -516,8 +541,12 @@ class PrePushTests(unittest.TestCase):
     def test_near_match_targets_are_not_official_on_both_platforms(self):
         cases = (
             "https://github.com.evil.example/gtree965/bashi-voice-factory-privacy",
+            "https://www.github.com.evil.example/gtree965/bashi-voice-factory-privacy",
+            "https://github.com../gtree965/bashi-voice-factory-privacy",
             "https://github.com/gtree965/bashi-voice-factory-privacy-fork",
             "https://gitee.com.evil.example/gtree965/bashi-voice-factory-privacy",
+            "https://www.gitee.com.evil.example/gtree965/bashi-voice-factory-privacy",
+            "https://gitee.com../gtree965/bashi-voice-factory-privacy",
             "https://gitee.com/gtree965/bashi-voice-factory-privacy-fork",
         )
         for url in cases:
