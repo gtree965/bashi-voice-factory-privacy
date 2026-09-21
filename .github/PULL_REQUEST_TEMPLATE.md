@@ -11,8 +11,8 @@ One sentence: what changed, and why.
 
 - [ ] `git diff --check`
 - [ ] `node --check static/js/app.js`（改了前端 JS 才需要；本机需有 Node.js / only if you changed front-end JS; needs Node.js）
-- [ ] `python -m pytest tests -q`（开发环境；应为零 failed、零 errors / development environment; zero failed, zero errors）
-- [ ] 零依赖九模块命令（没有搭开发环境时，见 [`CONTRIBUTING.md`](../CONTRIBUTING.md) §2.1 / the zero-dependency nine-module command if you did not set up the dev environment）
+- [ ] `.\.venv\Scripts\python.exe -m pytest tests -q`（开发环境；应为零 failed、零 errors / development environment; zero failed, zero errors）
+- [ ] 零依赖九模块命令（没有搭开发环境时，见 [`CONTRIBUTING.md`](https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/CONTRIBUTING.md) §2.1 / the zero-dependency nine-module command if you did not set up the dev environment）
 - [ ] 其他（请写明命令与结果）/ Other (write the command and the result):
 
 ## 你没能跑的检查（请如实填写，不影响是否接受）/ Checks you could not run (honest answers welcome)
@@ -27,5 +27,10 @@ to prove. Say which check you skipped, why, and how you verified your change ins
 
 ## 与既定方向的关系 / Relation to the roadmap
 
-- [ ] 我读过 [`ROADMAP.md`](../ROADMAP.md)，这个改动不与其冲突 / I read ROADMAP.md and this does not conflict with it
-- [ ] 如果它改变了用户可见行为，我在 [`CHANGELOG.md`](../CHANGELOG.md) 里补了一行 / if it changes user-visible behaviour, I added a line to CHANGELOG.md
+<!-- 下面两项是**人工判断**，没有对应的自动门禁，因此不再是勾选框，请自行填写。 -->
+<!-- The two items below are human judgement: no automated gate checks them, so they are not checkboxes. -->
+<!-- 本节的绝对 URL 待推送上线后在线验收；未推送前返回 404 是预期现象，既不算失败，也不代表已可达。 -->
+<!-- The absolute URLs here are verified online once this change is pushed; a 404 before then is expected — not a failure, and not evidence that they are reachable. -->
+
+- 与 [`ROADMAP.md`](https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/ROADMAP.md) 的一致性（请自行填写）/ consistency with ROADMAP.md (please fill in):
+- 若改动用户可见行为，[`CHANGELOG.md`](https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/CHANGELOG.md) 是否需要补一行（请自行填写）/ if it changes user-visible behaviour, whether CHANGELOG.md needs a line (please fill in):

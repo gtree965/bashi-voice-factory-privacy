@@ -87,9 +87,15 @@ python -m venv .venv
 `pytest==9.1.1`.
 
 Measured cost on 2026-09-21 (single machine, single measurement — not a general promise):
-**410,098,000 decimal bytes (410.1 MB) of downloads across 75 packages**, about 102 s for the
-install, yielding **72 installed distributions**; the suite then reports
-`255 passed, 7 skipped, 203 subtests passed` in about 62 s, exit code 0.
+**about 410 MB of downloads**, **75 `Downloading` records** reported by pip, **72 installed
+distributions** afterwards (`pip freeze`); the install took about 102 s, and the suite then
+reports `255 passed, 7 skipped, 203 subtests passed` in about 62 s, exit code 0.
+
+The first two numbers are pip's own display, and you can reproduce them: 410 MB is the sum of
+the rounded sizes pip prints (not exact transferred bytes), and 75 is the count of `Downloading`
+lines — not the package count. Transitive dependencies get re-downloaded while pip backtracks
+(SciPy alone produced three records here), which is why 75 download records end up as only
+72 installed distributions.
 
 To isolate your own change, run one file (or one test) instead:
 
@@ -112,6 +118,12 @@ sensitive terms, and machine/tooling residue before a commit or a push.
   [commit guard] BLOCKED: Local term list is missing, unreadable or empty.
   ```
   You cannot obtain the maintainer's list, and you should not invent one.
+
+The identity check inside the guard — the one that compares commits and annotated tags with the
+maintainer's identity — is **scoped to official repository targets** (this project's GitHub and
+Gitee repositories); a push that resolves to your own fork is **not** held to that identity.
+That does **not** change the conclusion below: the missing local term list still blocks your
+commit, so the guard stays unusable for external contributors.
 
 Also note that `core.hooksPath` switches on **all three hooks at once**; there is no
 "pre-commit only" setting.
@@ -146,9 +158,10 @@ practice; it does not claim a historical rule.
 Some checks cannot run from a clone (see §2.3). In your pull request, say in one sentence what
 you did not run and how you verified your change instead. For example:
 
-> `tests/test_zh_confusion.py` needs `models/silero_vad.onnx`, which is not distributed with the
-> source. I ran `tests/test_text_chunking.py` instead and checked the `zh_confusion.py` return
-> values by hand.
+> I could not build the portable ZIP, and I could not run one real synthesis or transcription with
+> the actual model weights: both need inputs that are not distributed with the source (see §2.3).
+> I covered my change with `.\.venv\Scripts\python.exe -m pytest tests -q` and reviewed the
+> affected code paths by hand.
 
 A statement like that does not make your pull request harder to accept — it tells the maintainer
 what to re-run.
@@ -254,9 +267,13 @@ python -m venv .venv
 [`requirements-dev.txt`](requirements-dev.txt) 是固定版本的：它拉入 `requirements.txt`，
 再加 `pytest==9.1.1`。
 
-2026-09-21 实测代价（**本机单次测量**，不是通用承诺）：**下载 410,098,000 十进制字节
-（410.1 MB），共 75 个包**；安装约 102 秒，装出 **72 个发行包**；随后整套测试输出
-`255 passed, 7 skipped, 203 subtests passed`，约 62 秒，退出码 0。
+2026-09-21 实测代价（**本机单次测量**，不是通用承诺）：**下载约 410 MB**、pip 报出
+**75 条 `Downloading` 记录**、最终 **72 个已安装发行包**（`pip freeze`）；安装约 102 秒，
+随后整套测试输出 `255 passed, 7 skipped, 203 subtests passed`，约 62 秒，退出码 0。
+
+前两个数字都是 pip 自己的显示值，你可以自行复核：410 MB 是 pip 打印的**四舍五入大小求和**
+（不是精确传输字节），75 是 `Downloading` 行数而**不是包数**——传递依赖会在 pip 回溯时被
+重复下载（这里仅 SciPy 就占了三条记录），所以 75 条下载记录最终只装出 72 个发行包。
 
 只隔离自己的改动时，跑单个文件（或单个用例）：
 
@@ -277,6 +294,10 @@ python -m venv .venv
   [commit guard] BLOCKED: Local term list is missing, unreadable or empty.
   ```
   你拿不到维护者的词表，也**不应该**为了它去自造一份。
+
+守卫里的身份校验（把提交与附注标签和维护者身份比对）只作用于**官方仓库目标**（本项目的
+GitHub 与 Gitee 仓库）；已解析为你自己 fork 的推送**不会**被这个身份卡住。但**这并不改变
+下面的结论**：本地词表缺失仍会挡住你的提交，所以守卫对外部贡献者依旧不可用。
 
 另外注意：`core.hooksPath` 是**一开全开**——三个钩子同时生效，没有「只启用 pre-commit」这种开法。
 
@@ -306,8 +327,9 @@ python -m venv .venv
 有些检查在克隆里跑不了（见 §2.3）。请在 PR 描述里用一句话说明你**没跑什么**、以及你用什么方式
 验证了自己的改动。例如：
 
-> `tests/test_zh_confusion.py` 需要 `models/silero_vad.onnx`，该目录不随源码分发。
-> 我改为单跑 `tests/test_text_chunking.py`，并手工核对了 `zh_confusion.py` 的返回值。
+> 我没能构建便携 ZIP，也没能用真实模型权重跑一次合成或转写：这两项需要的输入都不随源码
+> 分发（见 §2.3）。我改为用 `.\.venv\Scripts\python.exe -m pytest tests -q` 覆盖自己的改动，
+> 并手工复核了受影响的代码路径。
 
 这样的声明**不会**让你的 PR 更难被接受；相反，它让维护者知道该补跑什么。
 

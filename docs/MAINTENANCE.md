@@ -27,7 +27,7 @@ promising a schedule would not be honest.
 
 | Level | Criteria | Order |
 |---|---|---|
-| High | the privacy posture is broken (any outbound traffic or telemetry appears), the app cannot start, or data is corrupted | first |
+| High | the privacy commitment is broken: an outbound connection the user did not trigger (background polling, silent update probes, analytics), any upload of audio or text, or any telemetry — the documented, user-triggered downloads are not a violation; or the app cannot start; or data is corrupted | first |
 | Medium | a feature is unusable but a workaround exists, or performance regresses noticeably | normal triage |
 | Low | documentation, wording, experience details | handled together with related changes |
 
@@ -82,7 +82,7 @@ Issue **集中分诊**。同一批里，**安全与阻断类问题（应用无�
 
 | 级别 | 判据 | 处理次序 |
 |---|---|---|
-| 高 | 隐私承诺被破坏（出现任何外发/遥测）、无法启动、数据损坏 | 先处理 |
+| 高 | 隐私承诺被破坏：**未经用户触发的外联**（后台轮询、静默更新探测、统计上报）、**任何音频或文本上传**、**任何遥测**——有文档记录且由用户主动触发的下载不算违规；或无法启动、数据损坏 | 先处理 |
 | 中 | 功能不可用但有替代路径、性能明显回退 | 常规分诊 |
 | 低 | 文档、措辞、体验细节 | 与相关变更合并处理 |
 
