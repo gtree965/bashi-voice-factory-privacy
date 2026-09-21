@@ -27,10 +27,6 @@ to prove. Say which check you skipped, why, and how you verified your change ins
 
 ## 与既定方向的关系 / Relation to the roadmap
 
-<!-- 下面两项是**人工判断**，没有对应的自动门禁，因此不再是勾选框，请自行填写。 -->
-<!-- The two items below are human judgement: no automated gate checks them, so they are not checkboxes. -->
-<!-- 本节的绝对 URL 待推送上线后在线验收；未推送前返回 404 是预期现象，既不算失败，也不代表已可达。 -->
-<!-- The absolute URLs here are verified online once this change is pushed; a 404 before then is expected — not a failure, and not evidence that they are reachable. -->
 
 - 与 [`ROADMAP.md`](https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/ROADMAP.md) 的一致性（请自行填写）/ consistency with ROADMAP.md (please fill in):
 - 若改动用户可见行为，[`CHANGELOG.md`](https://github.com/gtree965/bashi-voice-factory-privacy/blob/main/CHANGELOG.md) 是否需要补一行（请自行填写）/ if it changes user-visible behaviour, whether CHANGELOG.md needs a line (please fill in):
