@@ -58,8 +58,10 @@ RESULT_WRONG = "wrong"
 RESULT_LOCKED = "locked"
 RESULT_COOLING_DOWN = "cooling_down"
 
-_PRUNE_THRESHOLD = 256
-_PRUNE_FLOOR = 64
+# Hard cap on the per-address records.  A record only exists for an address
+# that has failed at least once, so this is what keeps memory bounded when
+# something floods the app with requests from many source addresses.
+MAX_IP_RECORDS = 1024
 
 _LOOPBACK_V6 = ipaddress.IPv6Address("::1")
 
@@ -373,11 +375,12 @@ def _is_navigation_request() -> bool:
 
 
 class _IpRecord:
-    __slots__ = ("failures", "locked_until")
+    __slots__ = ("failures", "locked_until", "last_failure_at")
 
     def __init__(self):
         self.failures = 0
         self.locked_until = 0.0
+        self.last_failure_at = 0.0
 
 
 class _FailureLimiter:
@@ -417,6 +420,17 @@ class _FailureLimiter:
                 return 0
             return record.failures
 
+    @property
+    def record_count(self) -> int:
+        """Number of per-address records currently kept."""
+        with self._lock:
+            return len(self._records)
+
+    def known_sources(self):
+        """The addresses that currently have a record."""
+        with self._lock:
+            return set(self._records)
+
     def is_locked(self, source) -> bool:
         now = self._clock()
         with self._lock:
@@ -454,13 +468,14 @@ class _FailureLimiter:
                 if record is not None:
                     record.failures = 0
                     record.locked_until = 0.0
-                self._prune(now)
+                self._enforce_capacity(now)
                 return RESULT_OK
 
             if record is None:
                 record = _IpRecord()
                 self._records[source] = record
             record.failures += 1
+            record.last_failure_at = now
             if record.failures >= PER_IP_FAILURE_LIMIT:
                 record.locked_until = now + PER_IP_LOCKOUT_SECONDS
 
@@ -475,21 +490,58 @@ class _FailureLimiter:
                 if self._on_global_cooldown is not None:
                     self._on_global_cooldown(seconds)
 
-            self._prune(now)
+            self._enforce_capacity(now)
             return RESULT_WRONG
 
-    def _prune(self, now) -> None:
-        """Keep memory bounded; only records with nothing left are dropped."""
-        if len(self._records) < _PRUNE_THRESHOLD:
+    @staticmethod
+    def _carries_no_live_state(record, now) -> bool:
+        """True when dropping the record cannot change any later outcome.
+
+        Two classes qualify. An address that is not locked and currently sits at
+        zero failures is exactly the state a fresh record would be in, and a
+        record whose lockout has expired is reset to zero failures the next time
+        that address submits at all.
+        """
+        if record.locked_until > now:
+            return False
+        if record.failures == 0:
+            return True
+        return record.locked_until != 0
+
+    def _enforce_capacity(self, now) -> None:
+        """Keep the record table at or below :data:`MAX_IP_RECORDS`.
+
+        Deleting a live lockout would hand an attacker a fresh set of guesses,
+        and resetting the global counter or the doubling level would ignore the
+        attempts already spent, so this only ever drops records that carry no
+        state, and then - if the table is still too big - the ones whose last
+        failure is oldest among the addresses that are not locked right now.
+        Called from inside the accounting critical section, so the table cannot
+        be observed half-pruned.
+        """
+        if len(self._records) <= MAX_IP_RECORDS:
             return
-        stale = [
+
+        for key in [
             key
             for key, record in self._records.items()
-            if record.failures == 0 and record.locked_until <= now
-        ]
-        if len(self._records) - len(stale) < _PRUNE_FLOOR:
+            if self._carries_no_live_state(record, now)
+        ]:
+            del self._records[key]
+
+        overflow = len(self._records) - MAX_IP_RECORDS
+        if overflow <= 0:
             return
-        for key in stale:
+
+        evictable = sorted(
+            (record.last_failure_at, key)
+            for key, record in self._records.items()
+            if record.locked_until <= now
+        )
+        for _ in range(overflow):
+            if not evictable:
+                return
+            _, key = evictable.pop(0)
             del self._records[key]
 
 

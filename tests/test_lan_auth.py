@@ -726,6 +726,112 @@ class ConcurrencyTests(unittest.TestCase):
         self.assertEqual([200], successes)
 
 
+class RecordTableTests(unittest.TestCase):
+    """The per-address table has a hard cap and only loses dead records."""
+
+    PIN = "654321"
+
+    def setUp(self):
+        self.clock = FakeClock()
+        self.limiter = lan_auth._FailureLimiter(self.clock)
+
+    @staticmethod
+    def _source(index):
+        return "10.9.%d.%d" % (index // 250, index % 250 + 1)
+
+    def _skip_cooldown(self):
+        if self.limiter.is_cooling_down():
+            self.clock.advance(self.limiter.cooldown_remaining() + 1)
+
+    def _fail(self, source):
+        self._skip_cooldown()
+        self.clock.advance(1)
+        return self.limiter.submit(source, "000000", self.PIN, lan_auth.compare_pin)
+
+    def _fill(self, count):
+        for index in range(count):
+            self.assertEqual(lan_auth.RESULT_WRONG, self._fail(self._source(index)))
+        self.assertEqual(count, self.limiter.record_count)
+
+    def test_a_flood_of_one_shot_sources_stays_at_the_cap(self):
+        total = lan_auth.MAX_IP_RECORDS + 64
+        for index in range(total):
+            self.assertEqual(lan_auth.RESULT_WRONG, self._fail(self._source(index)))
+            self.assertLessEqual(self.limiter.record_count, lan_auth.MAX_IP_RECORDS)
+
+        self.assertEqual(lan_auth.MAX_IP_RECORDS, self.limiter.record_count)
+        known = self.limiter.known_sources()
+        # The oldest are the ones that went, the newest are the ones that stayed.
+        for index in (0, 1, 63):
+            self.assertNotIn(self._source(index), known)
+        for index in (64, total - 1):
+            self.assertIn(self._source(index), known)
+
+    def test_a_locked_address_survives_the_eviction(self):
+        self._fill(lan_auth.MAX_IP_RECORDS)
+
+        locked = "10.200.0.1"
+        for _ in range(lan_auth.PER_IP_FAILURE_LIMIT):
+            self._fail(locked)
+        self.assertTrue(self.limiter.is_locked(locked))
+
+        failures_before = self.limiter.global_failures
+        level_before = self.limiter.cooldown_level
+        for index in range(lan_auth.MAX_IP_RECORDS, lan_auth.MAX_IP_RECORDS + 6):
+            self._fail(self._source(index))
+
+        self.assertIn(locked, self.limiter.known_sources())
+        self.assertTrue(self.limiter.is_locked(locked))
+        self.assertEqual(lan_auth.MAX_IP_RECORDS, self.limiter.record_count)
+        # The accounting is untouched by the cleanup.
+        self.assertEqual(failures_before + 6, self.limiter.global_failures)
+        self.assertEqual(level_before, self.limiter.cooldown_level)
+
+    def test_records_without_failures_go_before_records_with_failures(self):
+        self._fill(lan_auth.MAX_IP_RECORDS)
+
+        self._skip_cooldown()
+        self.assertEqual(
+            lan_auth.RESULT_OK,
+            self.limiter.submit(
+                self._source(0), self.PIN, self.PIN, lan_auth.compare_pin
+            ),
+        )
+        self.assertEqual(0, self.limiter.failures_for(self._source(0)))
+
+        for index in (lan_auth.MAX_IP_RECORDS, lan_auth.MAX_IP_RECORDS + 1, lan_auth.MAX_IP_RECORDS + 2):
+            self._fail(self._source(index))
+
+        known = self.limiter.known_sources()
+        self.assertEqual(lan_auth.MAX_IP_RECORDS, self.limiter.record_count)
+        # The zero-failure record went first ...
+        self.assertNotIn(self._source(0), known)
+        # ... and only then did the oldest live records start going.
+        self.assertNotIn(self._source(1), known)
+        self.assertNotIn(self._source(2), known)
+        self.assertIn(self._source(3), known)
+
+    def test_an_expired_lockout_goes_before_an_older_live_record(self):
+        self._fill(lan_auth.MAX_IP_RECORDS - 1)
+
+        expired = "10.201.0.1"
+        for _ in range(lan_auth.PER_IP_FAILURE_LIMIT):
+            self._fail(expired)
+        self.assertTrue(self.limiter.is_locked(expired))
+        self.assertEqual(lan_auth.MAX_IP_RECORDS, self.limiter.record_count)
+
+        self.clock.advance(lan_auth.PER_IP_LOCKOUT_SECONDS + 1)
+
+        newcomer = self._source(lan_auth.MAX_IP_RECORDS - 1)
+        self._fail(newcomer)
+
+        known = self.limiter.known_sources()
+        self.assertNotIn(expired, known)
+        self.assertIn(self._source(0), known)
+        self.assertIn(newcomer, known)
+        self.assertEqual(lan_auth.MAX_IP_RECORDS, self.limiter.record_count)
+
+
 class SessionLifetimeTests(unittest.TestCase):
     def test_session_cookie_flags(self):
         app, _ = make_app()
