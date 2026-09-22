@@ -187,6 +187,50 @@ function Read-LanBindHost {
     return $selectedHost
 }
 
+function Get-BindHostMode {
+    param([Parameter(Mandatory = $true)][string]$BindHost)
+
+    # 'Local'      -- loopback only, the app runs exactly as before
+    # 'Network'    -- 0.0.0.0, every IPv4 interface of this machine
+    # 'Specific'   -- one concrete IPv4 address
+    # 'Unsupported'-- non-loopback IPv6 or a host name; app.py refuses to start
+    $value = $BindHost.Trim()
+    if ($value -eq 'localhost') { return 'Local' }
+
+    $address = $null
+    if (-not [System.Net.IPAddress]::TryParse($value, [ref]$address)) {
+        return 'Unsupported'
+    }
+    if ([System.Net.IPAddress]::IsLoopback($address)) { return 'Local' }
+    if ($address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6) {
+        return 'Unsupported'
+    }
+    if ($value -eq '0.0.0.0') { return 'Network' }
+    return 'Specific'
+}
+
+function Get-BindHostDisplayHost {
+    param(
+        [Parameter(Mandatory = $true)][string]$BindHost,
+        [string]$DetectedLanIp = ''
+    )
+
+    # Binding a concrete IP means 127.0.0.1 is not listening, so showing it
+    # here would send the user to an address that cannot connect.
+    switch (Get-BindHostMode -BindHost $BindHost) {
+        'Local' {
+            return '127.0.0.1'
+        }
+        'Network' {
+            if ($DetectedLanIp) { return $DetectedLanIp }
+            return 'YOUR_LOCAL_IP'
+        }
+        default {
+            return $BindHost.Trim()
+        }
+    }
+}
+
 function Set-PortablePthEntries {
     $portableAppEntry = ".."
     $portableGgufEntry = "..\..\vulkan_backend_spike\Qwen3-TTS-GGUF"
@@ -598,6 +642,15 @@ if (-not $BindHost) {
     Write-Host '[Y] Yes / 允许 (Host on 0.0.0.0)'
     Write-Host '[N] No / 仅本机 (127.0.0.1) — 10 秒未选择默认 N / defaults to N in 10s'
     Write-Host "========================================================"
+    Write-Host '[!] WARNING / 警告'
+    Write-Host '    Anyone who can reach this port on your network can open this app.'
+    Write-Host '    任何能访问该端口的设备都可以打开本程序。'
+    Write-Host '    A one-time PIN will be shown in the console and must be entered'
+    Write-Host '    on every other device before it can do anything.'
+    Write-Host '    控制台会显示一次性 PIN，其他设备必须先输入它才能操作。'
+    Write-Host '    Only enable this on a network you trust.'
+    Write-Host '    请仅在信任的网络上开启。'
+    Write-Host "========================================================"
     $BindHost = Read-LanBindHost
 }
 
@@ -607,26 +660,33 @@ Write-Host "正在启动巴适声工厂隐私版..."
 Write-Host "Backend: automatic selector / 后端：自动选择"
 Write-Host ""
 
-if ($BindHost -eq "0.0.0.0") {
-    $localIp = (
+$bindMode = Get-BindHostMode -BindHost $BindHost
+$detectedLanIp = ''
+if ($bindMode -eq 'Network') {
+    $detectedLanIp = (
         Get-NetIPConfiguration -ErrorAction SilentlyContinue |
             Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
             Select-Object -ExpandProperty IPv4Address -First 1
     ).IPAddress
-    if (-not $localIp) {
-        $localIp = "YOUR_LOCAL_IP"
-    }
-    Write-Host "--------------------------------------------------------"
-    Write-Host "Server is accessible from other devices at:"
-    Write-Host "可以从局域网其他设备访问此地址:"
-    Write-Host "http://${localIp}:$Port"
-    Write-Host "--------------------------------------------------------"
 }
-else {
+$displayHost = Get-BindHostDisplayHost -BindHost $BindHost -DetectedLanIp $detectedLanIp
+
+if ($bindMode -eq 'Local') {
     Write-Host "--------------------------------------------------------"
     Write-Host "Server is running locally. Access it at:"
     Write-Host "服务器运行在本地模式。请访问:"
     Write-Host "http://127.0.0.1:$Port"
+    Write-Host "--------------------------------------------------------"
+}
+else {
+    Write-Host "--------------------------------------------------------"
+    Write-Host "Server is accessible from other devices at:"
+    Write-Host "可以从局域网其他设备访问此地址:"
+    Write-Host "http://${displayHost}:$Port"
+    Write-Host ""
+    Write-Host "A one-time PIN is printed in this console; enter it on the"
+    Write-Host "other device before it can do anything."
+    Write-Host "控制台会打印一次性 PIN；其他设备需先输入它才能操作。"
     Write-Host "--------------------------------------------------------"
 }
 
