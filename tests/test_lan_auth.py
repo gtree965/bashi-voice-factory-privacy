@@ -998,6 +998,54 @@ class CrossSiteTests(unittest.TestCase):
         self.assertEqual("/", response.headers["Location"])
 
 
+class FrontendPinHandlingTests(unittest.TestCase):
+    """Static checks on the one front-end change this work is allowed to make."""
+
+    def setUp(self):
+        self.frontend = (APP_ROOT / "static" / "js" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+    def test_every_fetch_goes_through_the_wrapper(self):
+        self.assertIn("const bashiRawFetch = window.fetch.bind(window);", self.frontend)
+        self.assertIn("window.fetch = function bashiFetch(input, init) {", self.frontend)
+        # The raw binding is the only way out of the wrapper, and the wrapper is
+        # installed at load time, before init() can issue any request.
+        self.assertEqual(
+            1, self.frontend.count("const bashiRawFetch = window.fetch.bind(window);")
+        )
+        self.assertEqual(
+            1, self.frontend.count("window.fetch = function bashiFetch(input, init) {")
+        )
+
+    def test_wrapper_looks_for_the_marker_without_consuming_the_body(self):
+        section_start = self.frontend.index("window.fetch = function bashiFetch")
+        section = self.frontend[section_start:section_start + 900]
+
+        self.assertIn("response.status !== 401", section)
+        self.assertIn("response.clone().json()", section)
+        self.assertIn("payload.code === LAN_PIN_CODE", section)
+        self.assertIn("return response;", section)
+
+    def test_eventsource_error_starts_a_bounded_probe(self):
+        self.assertIn("LAN_PIN_PROBE_INTERVAL_MS = 3000", self.frontend)
+        self.assertIn("LAN_PIN_PROBE_TIMEOUT_MS = 300000", self.frontend)
+        self.assertIn("bashiStartPinProbe();", self.frontend)
+
+        onerror_start = self.frontend.index("eventSource.onerror = function() {")
+        onerror = self.frontend[onerror_start:onerror_start + 500]
+        # The interface reset has to stay first, unchanged.
+        self.assertLess(onerror.index("eventSource.close();"), onerror.index("bashiStartPinProbe();"))
+        self.assertIn("elements.sttTranscribeBtn.style.display = 'flex';", onerror)
+
+    def test_home_page_asks_for_the_local_pin_once(self):
+        self.assertIn("refreshLocalPinHint();", self.frontend)
+        self.assertIn("'/api/local-pin'", self.frontend)
+        init_start = self.frontend.index("async function init() {")
+        init = self.frontend[init_start:init_start + 400]
+        self.assertIn("refreshLocalPinHint();", init)
+
+
 class PinSecrecyTests(unittest.TestCase):
     def test_pin_absent_from_logs_and_stderr(self):
         clock = FakeClock()

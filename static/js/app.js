@@ -1042,10 +1042,123 @@ const DEMO_TEXTS = {
     ]
 };
 
+// --- LAN PIN session handling ---------------------------------------------
+// When the app is reachable from the network and the session is gone (most
+// often: the app was restarted and issued a new PIN), the server answers 401
+// with {code: "lan_pin_required"}. Every fetch in this file goes through the
+// wrapper below, so all of them end up on the PIN page instead of failing
+// silently in the background.
+const LAN_PIN_CODE = 'lan_pin_required';
+const LAN_PIN_PAGE = '/lan-pin';
+const LAN_PIN_PROBE_INTERVAL_MS = 3000;
+const LAN_PIN_PROBE_TIMEOUT_MS = 300000;
+
+const bashiRawFetch = window.fetch.bind(window);
+
+window.fetch = function bashiFetch(input, init) {
+    return bashiRawFetch(input, init).then(function (response) {
+        if (!response || response.status !== 401) {
+            return response;
+        }
+        // Read a clone so callers that stream the body still get an unread one.
+        return response.clone().json().then(function (payload) {
+            if (payload && payload.code === LAN_PIN_CODE) {
+                bashiGoToPinPage();
+            }
+            return response;
+        }).catch(function () {
+            return response;
+        });
+    });
+};
+
+function bashiGoToPinPage() {
+    if (window.location.pathname === LAN_PIN_PAGE) {
+        return;
+    }
+    window.location.href = LAN_PIN_PAGE;
+}
+
+// EventSource cannot see the response status, and the common failure is an app
+// restart: while the server is down the browser reports a network error, not a
+// 401. So onerror resets the UI exactly as before and then probes in the
+// background until the server answers again or the time limit runs out.
+let bashiPinProbeRunning = false;
+
+function bashiStartPinProbe() {
+    if (bashiPinProbeRunning) {
+        return;
+    }
+    bashiPinProbeRunning = true;
+    const deadline = Date.now() + LAN_PIN_PROBE_TIMEOUT_MS;
+
+    function attempt() {
+        if (Date.now() >= deadline) {
+            bashiPinProbeRunning = false;
+            return;
+        }
+        setTimeout(function () {
+            window.fetch('/api/warmup/status').then(function (response) {
+                // Any HTTP answer means the server is back; a 401 has already
+                // been turned into a jump to the PIN page by the wrapper.
+                bashiPinProbeRunning = false;
+                return response;
+            }).catch(function () {
+                // Network error: still down, keep probing until the deadline.
+                attempt();
+            });
+        }, LAN_PIN_PROBE_INTERVAL_MS);
+    }
+
+    attempt();
+}
+
+// The console PIN is easy to minimise or to scroll away, so the machine's own
+// browser asks for it once at load time. A phone, and a server bound to one
+// concrete IP, get a 404 and show nothing.
+async function refreshLocalPinHint() {
+    try {
+        const response = await window.fetch('/api/local-pin');
+        if (!response || response.status !== 200) {
+            return;
+        }
+        const data = await response.json();
+        if (!data || !data.pin) {
+            return;
+        }
+        showLocalPinHint(data.pin);
+    } catch (error) {
+        // Loopback mode and remote devices: nothing to show.
+    }
+}
+
+function showLocalPinHint(pin) {
+    if (document.getElementById('lan-pin-hint')) {
+        return;
+    }
+    const bar = document.createElement('div');
+    bar.id = 'lan-pin-hint';
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;'
+        + 'flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:10px 16px;'
+        + 'background:#1b1e26;color:#f2f4f8;border-top:2px solid #d4a373;'
+        + 'font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:13px;';
+    const label = document.createElement('span');
+    label.textContent = state.currentLang === 'zh'
+        ? '局域网访问 PIN（其他设备需要输入）：'
+        : 'LAN access PIN (needed on other devices):';
+    const value = document.createElement('strong');
+    value.textContent = pin;
+    value.style.cssText = 'font-size:18px;letter-spacing:4px;color:#d4a373;';
+    bar.appendChild(label);
+    bar.appendChild(value);
+    document.body.appendChild(bar);
+}
+
 // Initialize Application
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+    refreshLocalPinHint();
     startWarmup();
     await loadVoices();
     await loadSttModels();
@@ -3274,6 +3387,10 @@ async function pollSttProgress() {
         // Fallback UI reset
         elements.sttTranscribeBtn.style.display = 'flex';
         document.getElementById('stt-loading').style.display = 'none';
+        // The UI is usable again right away; in the background, look for the
+        // server so that a restarted app sends this device to the PIN page
+        // without the user having to touch anything.
+        bashiStartPinProbe();
     };
 }
 
