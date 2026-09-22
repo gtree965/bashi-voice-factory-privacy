@@ -1048,6 +1048,8 @@ const DEMO_TEXTS = {
 // with {code: "lan_pin_required"}. Every fetch in this file goes through the
 // wrapper below, so all of them end up on the PIN page instead of failing
 // silently in the background.
+//
+// --- BEGIN LAN PIN frontend block (extracted verbatim by tests/test_lan_pin_probe.py) ---
 const LAN_PIN_CODE = 'lan_pin_required';
 const LAN_PIN_PAGE = '/lan-pin';
 const LAN_PIN_PROBE_INTERVAL_MS = 3000;
@@ -1083,35 +1085,150 @@ function bashiGoToPinPage() {
 // restart: while the server is down the browser reports a network error, not a
 // 401. So onerror resets the UI exactly as before and then probes in the
 // background until the server answers again or the time limit runs out.
-let bashiPinProbeRunning = false;
+//
+// The deadline is the point of this code, so it is checked in all three places
+// where a request could still slip past it: when the retry timer fires, when a
+// response arrives, and - for a request that is already on the wire - by
+// aborting it at the deadline. The probe is a factory with every dependency
+// injected, because tests/test_lan_pin_probe.py runs exactly this block under
+// node's vm with a fake clock and fake timers; a real 300-second wait is not
+// something a test can do.
+function createLanPinProbe(options) {
+    const config = options || {};
+    const now = config.now || function () { return Date.now(); };
+    const setTimer = config.setTimeout
+        || function (fn, ms) { return window.setTimeout(fn, ms); };
+    const clearTimer = config.clearTimeout
+        || function (id) { window.clearTimeout(id); };
+    const request = config.fetch || function (input, init) {
+        return bashiRawFetch(input, init);
+    };
+    const navigate = config.navigate || bashiGoToPinPage;
+    const url = config.url || '/api/warmup/status';
+    const intervalMs = config.intervalMs || LAN_PIN_PROBE_INTERVAL_MS;
+    const timeoutMs = config.timeoutMs || LAN_PIN_PROBE_TIMEOUT_MS;
+    const createController = config.createAbortController || function () {
+        return typeof AbortController === 'function' ? new AbortController() : null;
+    };
 
-function bashiStartPinProbe() {
-    if (bashiPinProbeRunning) {
-        return;
+    let running = false;
+    let retryTimer = null;
+    let deadlineTimer = null;
+    let controller = null;
+    let deadline = 0;
+
+    function stop() {
+        running = false;
+        if (retryTimer !== null) {
+            clearTimer(retryTimer);
+            retryTimer = null;
+        }
+        if (deadlineTimer !== null) {
+            clearTimer(deadlineTimer);
+            deadlineTimer = null;
+        }
+        if (controller) {
+            controller.abort();
+            controller = null;
+        }
     }
-    bashiPinProbeRunning = true;
-    const deadline = Date.now() + LAN_PIN_PROBE_TIMEOUT_MS;
+
+    function expired() {
+        return now() >= deadline;
+    }
+
+    function scheduleRetry() {
+        retryTimer = setTimer(function () {
+            retryTimer = null;
+            // (1) Checked when the timer fires: a timer that was already
+            // scheduled just short of the deadline does not send anything.
+            if (expired()) {
+                stop();
+                return;
+            }
+            attempt();
+        }, intervalMs);
+    }
 
     function attempt() {
-        if (Date.now() >= deadline) {
-            bashiPinProbeRunning = false;
-            return;
-        }
-        setTimeout(function () {
-            window.fetch('/api/warmup/status').then(function (response) {
-                // Any HTTP answer means the server is back; a 401 has already
-                // been turned into a jump to the PIN page by the wrapper.
-                bashiPinProbeRunning = false;
-                return response;
+        const pending = request(
+            url, { signal: controller ? controller.signal : undefined }
+        );
+        Promise.resolve(pending).then(function (response) {
+            if (!running) {
+                return;
+            }
+            // (3) Checked when the answer arrives: anything that lands after
+            // the deadline is ignored, so a late recovery cannot move the page.
+            if (expired()) {
+                stop();
+                return;
+            }
+            if (!response || response.status !== 401) {
+                stop();
+                return;
+            }
+            return response.json().then(function (payload) {
+                if (!running || expired()) {
+                    stop();
+                    return;
+                }
+                if (payload && payload.code === LAN_PIN_CODE) {
+                    stop();
+                    navigate();
+                    return;
+                }
+                stop();
             }).catch(function () {
-                // Network error: still down, keep probing until the deadline.
-                attempt();
+                stop();
             });
-        }, LAN_PIN_PROBE_INTERVAL_MS);
+        }).catch(function () {
+            if (!running) {
+                return;
+            }
+            if (expired()) {
+                stop();
+                return;
+            }
+            scheduleRetry();
+        });
     }
 
-    attempt();
+    function start() {
+        if (running) {
+            return;
+        }
+        running = true;
+        deadline = now() + timeoutMs;
+        controller = createController();
+        // (2) Whatever is in flight is aborted at the deadline rather than
+        // being left to the browser's own timeout.
+        deadlineTimer = setTimer(function () {
+            deadlineTimer = null;
+            if (controller) {
+                controller.abort();
+            }
+        }, timeoutMs);
+        scheduleRetry();
+    }
+
+    return {
+        start: start,
+        stop: stop,
+        isRunning: function () { return running; }
+    };
 }
+
+let bashiPinProbe = null;
+
+function bashiStartPinProbe() {
+    if (bashiPinProbe && bashiPinProbe.isRunning()) {
+        return;
+    }
+    bashiPinProbe = createLanPinProbe();
+    bashiPinProbe.start();
+}
+// --- END LAN PIN frontend block ---
 
 // The console PIN is easy to minimise or to scroll away, so the machine's own
 // browser asks for it once at load time. A phone, and a server bound to one
