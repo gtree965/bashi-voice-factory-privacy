@@ -242,6 +242,88 @@ def _json_error(status: int, message: str):
     return jsonify({"error": message}), status
 
 
+def _split_host(value):
+    """Split a ``Host`` header into ``(hostname, port_text)``.
+
+    Returns ``None`` when the header is missing or malformed.  IPv6 literals
+    must be written the standard way, in square brackets.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    if text.startswith("["):
+        end = text.find("]")
+        if end < 0:
+            return None
+        hostname = text[1:end]
+        rest = text[end + 1:]
+        if rest:
+            if not rest.startswith(":"):
+                return None
+            port_text = rest[1:]
+        else:
+            port_text = ""
+    elif ":" in text:
+        hostname, _, port_text = text.rpartition(":")
+    else:
+        hostname, port_text = text, ""
+    if not hostname:
+        return None
+    return hostname, port_text
+
+
+def _host_as_ip(hostname):
+    """Return an IPv4Address/IPv6Address, or ``None`` for a name."""
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv6Address):
+        mapped = address.ipv4_mapped
+        if mapped is not None:
+            return mapped
+        return address
+    return address
+
+
+def host_is_allowed(host_header, bind_host, port) -> bool:
+    """Host header check (D6), applied in both loopback and LAN mode.
+
+    The port has to be the one we bound, and every name is refused except
+    ``localhost``: DNS rebinding has to bring its own domain name with it, so
+    accepting only IP literals (plus the loopback name) removes the whole
+    attack.  Enumerating the machine's own addresses would be fragile instead
+    (multiple NICs, virtual adapters, DHCP changes), so binding
+    0.0.0.0 accepts any IPv4 literal and binding a concrete IP accepts that IP.
+    """
+    parsed = _split_host(host_header)
+    if parsed is None:
+        return False
+    hostname, port_text = parsed
+    if port_text != str(port):
+        return False
+
+    lowered = hostname.lower()
+    if lowered == "localhost":
+        return True
+
+    address = _host_as_ip(lowered)
+    if address is None:
+        return False
+    if isinstance(address, ipaddress.IPv6Address):
+        return address == _LOOPBACK_V6
+    if address.is_loopback:
+        return True
+
+    bind_mode = classify_bind_host(bind_host)
+    if bind_mode == MODE_LOOPBACK:
+        return False
+    bind_address = _host_as_ip((bind_host or "").strip())
+    if bind_address is None or str(bind_address) == "0.0.0.0":
+        return True
+    return address == bind_address
+
+
 def _is_navigation_request() -> bool:
     """True for a top-level navigation (missing header falls back to Accept)."""
     mode = request.headers.get("Sec-Fetch-Mode")
@@ -434,6 +516,17 @@ class LanAuthState:
 
     # --- request gate ---------------------------------------------------
     def _before_request(self):
+        # 1. Host header check first: a rebinding page must never be able to
+        # reach the PIN page and submit to it.
+        if not host_is_allowed(request.headers.get("Host"), self.bind_host, self.port):
+            return Response("Invalid Host header.", status=400, mimetype="text/plain")
+
+        # 1a. The loopback-only PIN readout. It is answered here, before the
+        # PIN page, D2 and the session check, so it can never answer 401 and
+        # never redirect: a phone gets a plain 404 either way.
+        if request.path == LOCAL_PIN_API_PATH:
+            return self.local_pin_response()
+
         if not self.enabled:
             return None
 
@@ -471,6 +564,27 @@ class LanAuthState:
                 "Expected a URL-encoded form.", status=415, mimetype="text/plain"
             )
         return None
+
+    def local_pin_response(self):
+        """D5: the PIN for the machine's own browser, or a plain 404.
+
+        Everything that is not exactly "LAN mode, bound to all interfaces so
+        that 127.0.0.1 is reachable, GET, caller is loopback, same origin" gets
+        the same 404 an unknown path would get.
+        """
+        if (
+            self.enabled
+            and self.loopback_reachable
+            and request.method == "GET"
+            and is_loopback_address(request.remote_addr)
+        ):
+            site = request.headers.get("Sec-Fetch-Site")
+            if site is None or site.strip().lower() == "same-origin":
+                response = jsonify({"pin": self.pin})
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Pragma"] = "no-cache"
+                return response
+        return Response("Not Found", status=404, mimetype="text/plain")
 
     def _session_is_valid(self) -> bool:
         if not session.get("lan_pin_authenticated"):

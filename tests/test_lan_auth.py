@@ -101,8 +101,10 @@ def make_app():
     return app, calls
 
 
-def make_client(app, remote=LAN_REMOTE, host=DEFAULT_HOST):
-    client = app.test_client()
+def make_client(app, remote=LAN_REMOTE, host=DEFAULT_HOST, use_cookies=True):
+    # use_cookies=False keeps the cookie jar from rewriting HTTP_COOKIE, which
+    # it otherwise does per request host (werkzeug.test.Client).
+    client = app.test_client(use_cookies=use_cookies)
     client.environ_base["REMOTE_ADDR"] = remote
     client.bashi_host = host
     return client
@@ -711,7 +713,7 @@ class SessionLifetimeTests(unittest.TestCase):
 
         restarted_app, _ = make_app()
         lan_auth.install(restarted_app, "0.0.0.0", PORT, clock=clock)
-        restarted_client = make_client(restarted_app)
+        restarted_client = make_client(restarted_app, use_cookies=False)
 
         self.assertEqual(
             401,
@@ -747,6 +749,165 @@ class LoopbackExemptionTests(unittest.TestCase):
                 self.assertEqual(401, call(client, "GET", "/api/voices").status_code)
 
 
+class HostHeaderTests(unittest.TestCase):
+    """D6, applied in both loopback and LAN mode."""
+
+    def _status(self, bind, host, path="/", method="GET"):
+        """Status for a signed-in loopback caller, so only the Host check can fail."""
+        app, _ = make_app()
+        state = lan_auth.install(app, bind, PORT)
+        client = make_client(app, remote=LOOPBACK_REMOTE, use_cookies=False)
+        headers = {"Host": host}
+        if state.enabled:
+            # Carried explicitly: the cookie jar keys on its own host, which is
+            # not what these cases are probing.
+            response = login(client, state.pin, remote=LOOPBACK_REMOTE)
+            self.assertEqual(302, response.status_code)
+            headers["Cookie"] = cookie_from(response)
+        return call(client, method, path, headers).status_code
+
+    def test_unknown_names_are_refused(self):
+        for bind in ("127.0.0.1", "0.0.0.0", "192.168.1.23"):
+            with self.subTest(bind=bind):
+                self.assertEqual(400, self._status(bind, "evil.example:%d" % PORT))
+                self.assertEqual(400, self._status(bind, "xxx.local:%d" % PORT))
+
+    def test_port_mismatch_is_refused(self):
+        self.assertEqual(400, self._status("0.0.0.0", "192.168.1.23:9999"))
+
+    def test_missing_host_is_refused(self):
+        self.assertEqual(400, self._status("0.0.0.0", ""))
+
+    def test_host_without_port_is_refused(self):
+        self.assertEqual(400, self._status("0.0.0.0", "127.0.0.1"))
+
+    def test_loopback_names_and_literals_are_accepted(self):
+        for bind in ("127.0.0.1", "0.0.0.0", "192.168.1.23"):
+            for host in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT, "[::1]:%d" % PORT):
+                with self.subTest(bind=bind, host=host):
+                    self.assertEqual(200, self._status(bind, host))
+
+    def test_zero_bind_accepts_any_ipv4_literal(self):
+        self.assertEqual(200, self._status("0.0.0.0", "192.168.1.23:%d" % PORT))
+
+    def test_concrete_bind_accepts_only_its_own_address(self):
+        self.assertEqual(200, self._status("192.168.1.23", "192.168.1.23:%d" % PORT))
+        self.assertEqual(400, self._status("192.168.1.23", "192.168.1.99:%d" % PORT))
+
+    def test_refusal_happens_before_the_pin_page(self):
+        app, calls = make_app()
+        state = lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app)
+
+        for method in ("GET", "POST"):
+            with self.subTest(method=method):
+                calls.clear()
+                response = call(
+                    client, method, PIN_PAGE, {"Host": "evil.example:%d" % PORT}
+                )
+                self.assertEqual(400, response.status_code)
+                self.assertEqual([], calls)
+
+        self.assertEqual(
+            400,
+            call(
+                client,
+                "POST",
+                PIN_PAGE,
+                {"Host": "evil.example:%d" % PORT},
+                data={"pin": state.pin},
+            ).status_code,
+        )
+        self.assertEqual(0, state.limiter.global_failures)
+
+
+class LocalPinEndpointTests(unittest.TestCase):
+    """D5: the PIN readout for the machine's own browser."""
+
+    def test_loopback_caller_in_lan_mode_gets_the_pin(self):
+        app, _ = make_app()
+        state = lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app, remote=LOOPBACK_REMOTE)
+
+        response = call(client, "GET", lan_auth.LOCAL_PIN_API_PATH)
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(state.pin, response.get_json()["pin"])
+        self.assertEqual("no-store", response.headers["Cache-Control"])
+        self.assertEqual("no-cache", response.headers["Pragma"])
+
+    def test_non_loopback_caller_gets_404_not_401(self):
+        for authenticated in (False, True):
+            with self.subTest(authenticated=authenticated):
+                app, _ = make_app()
+                state = lan_auth.install(app, "0.0.0.0", PORT)
+                client = make_client(app, remote=LAN_REMOTE)
+                if authenticated:
+                    self.assertEqual(302, login(client, state.pin).status_code)
+
+                response = call(client, "GET", lan_auth.LOCAL_PIN_API_PATH)
+
+                self.assertEqual(404, response.status_code)
+
+    def test_navigation_request_gets_404_not_a_redirect(self):
+        app, _ = make_app()
+        lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app, remote=LAN_REMOTE)
+
+        response = call(
+            client,
+            "GET",
+            lan_auth.LOCAL_PIN_API_PATH,
+            {"Sec-Fetch-Mode": "navigate"},
+        )
+
+        self.assertEqual(404, response.status_code)
+        self.assertNotIn("Location", response.headers)
+
+    def test_other_methods_and_cross_site_get_404(self):
+        app, _ = make_app()
+        lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app, remote=LOOPBACK_REMOTE)
+
+        self.assertEqual(
+            404, call(client, "POST", lan_auth.LOCAL_PIN_API_PATH).status_code
+        )
+        self.assertEqual(
+            404,
+            call(
+                client,
+                "GET",
+                lan_auth.LOCAL_PIN_API_PATH,
+                {"Sec-Fetch-Site": "cross-site"},
+            ).status_code,
+        )
+
+    def test_loopback_mode_and_concrete_bind_return_404(self):
+        for bind in ("127.0.0.1", "192.168.1.23"):
+            with self.subTest(bind=bind):
+                app, _ = make_app()
+                lan_auth.install(app, bind, PORT)
+                client = make_client(app, remote=LOOPBACK_REMOTE)
+
+                self.assertEqual(
+                    404, call(client, "GET", lan_auth.LOCAL_PIN_API_PATH).status_code
+                )
+
+    def test_bad_host_is_refused_before_the_endpoint(self):
+        app, _ = make_app()
+        lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app, remote=LOOPBACK_REMOTE)
+
+        response = call(
+            client,
+            "GET",
+            lan_auth.LOCAL_PIN_API_PATH,
+            {"Host": "evil.example:%d" % PORT},
+        )
+
+        self.assertEqual(400, response.status_code)
+
+
 class PinSecrecyTests(unittest.TestCase):
     def test_pin_absent_from_logs_and_stderr(self):
         clock = FakeClock()
@@ -776,6 +937,10 @@ class PinSecrecyTests(unittest.TestCase):
                 clock.advance(state.limiter.cooldown_remaining() + 1)
                 self.assertEqual(302, login(client, state.pin).status_code)
                 self.assertEqual(200, call(client, "GET", "/").status_code)
+                own = make_client(app, remote=LOOPBACK_REMOTE)
+                self.assertEqual(
+                    200, call(own, "GET", lan_auth.LOCAL_PIN_API_PATH).status_code
+                )
         finally:
             root.removeHandler(handler)
 
