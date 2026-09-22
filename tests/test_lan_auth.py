@@ -805,11 +805,15 @@ class LoopbackExemptionTests(unittest.TestCase):
 class HostHeaderTests(unittest.TestCase):
     """D6, applied in both loopback and LAN mode."""
 
-    def _status(self, bind, host, path="/", method="GET"):
+    def _status(self, bind, host, path="/", method="GET", port=PORT):
         """Status for a signed-in loopback caller, so only the Host check can fail."""
         app, _ = make_app()
-        state = lan_auth.install(app, bind, PORT)
-        client = make_client(app, remote=LOOPBACK_REMOTE, use_cookies=False)
+        state = lan_auth.install(app, bind, port)
+        # Port 80 is written without a port, the way a browser sends it.
+        login_host = "127.0.0.1" if port == 80 else "127.0.0.1:%d" % port
+        client = make_client(
+            app, remote=LOOPBACK_REMOTE, host=login_host, use_cookies=False
+        )
         headers = {"Host": host}
         if state.enabled:
             # Carried explicitly: the cookie jar keys on its own host, which is
@@ -831,14 +835,48 @@ class HostHeaderTests(unittest.TestCase):
     def test_missing_host_is_refused(self):
         self.assertEqual(400, self._status("0.0.0.0", ""))
 
-    def test_host_without_port_is_refused(self):
-        self.assertEqual(400, self._status("0.0.0.0", "127.0.0.1"))
+    def test_host_without_a_port_is_refused_when_bound_elsewhere(self):
+        # A portless Host means 80, which is not the port this app is on.
+        for port in (5050, 8080):
+            with self.subTest(port=port):
+                self.assertEqual(400, self._status("0.0.0.0", "127.0.0.1", port=port))
+
+    def test_port_80_accepts_both_host_forms(self):
+        for host in ("127.0.0.1", "127.0.0.1:80", "localhost", "[::1]"):
+            with self.subTest(host=host):
+                self.assertEqual(200, self._status("0.0.0.0", host, port=80))
+        self.assertEqual(
+            400, self._status("0.0.0.0", "127.0.0.1:5050", port=80)
+        )
+
+    def test_port_80_works_in_the_default_local_only_mode_too(self):
+        app, calls = make_app()
+        lan_auth.install(app, "127.0.0.1", 80)
+        client = make_client(app, remote=LOOPBACK_REMOTE, host="127.0.0.1")
+
+        self.assertEqual(200, call(client, "GET", "/api/voices").status_code)
+        self.assertEqual(["voices"], calls)
+
+    def test_port_80_same_origin_post_passes_the_cross_site_check(self):
+        app, calls = make_app()
+        state = lan_auth.install(app, "0.0.0.0", 80)
+        client = make_client(app, host="127.0.0.1")
+        self.assertEqual(302, login(client, state.pin).status_code)
+
+        response = call(client, "POST", "/api/warmup", {"Origin": "http://127.0.0.1"})
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(["warmup"], calls)
 
     def test_loopback_names_and_literals_are_accepted(self):
         for bind in ("127.0.0.1", "0.0.0.0", "192.168.1.23"):
             for host in ("127.0.0.1:%d" % PORT, "localhost:%d" % PORT, "[::1]:%d" % PORT):
                 with self.subTest(bind=bind, host=host):
                     self.assertEqual(200, self._status(bind, host))
+
+    def test_non_ascii_port_digits_are_refused(self):
+        self.assertEqual(400, self._status("0.0.0.0", "127.0.0.1：5050"))
+        self.assertEqual(400, self._status("0.0.0.0", "127.0.0.1:５０５０"))
 
     def test_zero_bind_accepts_any_ipv4_literal(self):
         self.assertEqual(200, self._status("0.0.0.0", "192.168.1.23:%d" % PORT))

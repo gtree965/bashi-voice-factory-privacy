@@ -292,6 +292,25 @@ def _split_host(value):
     return hostname, port_text
 
 
+def _host_port(port_text):
+    """Return the port of a ``Host`` header, or ``None`` when it is unusable.
+
+    A ``Host`` header may omit the port, and a browser does exactly that when
+    the site is on port 80.  Treating the empty string as an invalid port made
+    every request fail the Host check as soon as the app was started on port 80
+    (``BASHI_PORT=80`` is a supported configuration), so the empty one means
+    HTTP's default port instead.
+    """
+    if port_text == "":
+        return 80
+    if not port_text.isascii() or not port_text.isdigit():
+        return None
+    value = int(port_text)
+    if not 0 < value < 65536:
+        return None
+    return value
+
+
 def _host_as_ip(hostname):
     """Return an IPv4Address/IPv6Address, or ``None`` for a name."""
     try:
@@ -320,7 +339,7 @@ def host_is_allowed(host_header, bind_host, port) -> bool:
     if parsed is None:
         return False
     hostname, port_text = parsed
-    if port_text != str(port):
+    if _host_port(port_text) != int(port):
         return False
 
     lowered = hostname.lower()
