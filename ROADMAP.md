@@ -64,6 +64,8 @@ Semver convention: pre-1.0, MINOR = new feature surface (new OS, new backend cla
 - NPU silicon (Snapdragon X / Lunar Lake / Ryzen AI 300) unused
 - ARM64 Windows unsupported (x64 emulation only)
 - **Source bootstrap known limitation**: a fresh clone cannot build the portable package or run the release checks without inputs that are not distributed with the source (the embedded Python runtime, the model weights, and one runtime directory that lives outside the repository). [`CONTRIBUTING.md`](CONTRIBUTING.md) states what does run from a clone today.
+- **Release package byte reproducibility (known limitation)**: probes have demonstrated three mechanisms that change packaged files or archive bytes — staging-file timestamps recorded in the ZIP, the working-tree line endings of copied files, and the packaging script's own line endings carried into the generated launchers. The correspondence between a release artifact and the source can therefore only be vouched for by the maintainer's build records and cannot be recomputed independently; tracked in [issue #1](https://github.com/gtree965/bashi-voice-factory-privacy/issues/1).
+- **Build residue changes one test's result**: `tests/test_portable_dependency_install.py` scans the working tree, so an untracked `dist/` left by packaging changes its outcome; tracked in [issue #2](https://github.com/gtree965/bashi-voice-factory-privacy/issues/2).
 
 ---
 
