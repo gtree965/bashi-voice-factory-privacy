@@ -242,6 +242,26 @@ def _json_error(status: int, message: str):
     return jsonify({"error": message}), status
 
 
+def compare_pin(candidate, pin) -> bool:
+    """Compare a submitted PIN with the generated one, byte by byte.
+
+    ``hmac.compare_digest`` refuses two ``str`` operands that contain
+    non-ASCII characters and raises ``TypeError``. Anyone on the network could
+    therefore turn a full-width digit or a Chinese character into a 500 and a
+    traceback in ``app.log``, without ever spending a failed attempt. Encoding
+    both sides first makes every input an ordinary wrong PIN, which is what the
+    form should treat it as. No normalisation is done: full-width digits are a
+    different string on purpose.
+    """
+    if not isinstance(candidate, str):
+        return False
+    try:
+        candidate_bytes = candidate.encode("utf-8")
+    except UnicodeEncodeError:  # lone surrogates, e.g. from a broken client
+        return False
+    return hmac.compare_digest(candidate_bytes, pin.encode("ascii"))
+
+
 def _split_host(value):
     """Split a ``Host`` header into ``(hostname, port_text)``.
 
@@ -653,7 +673,7 @@ class LanAuthState:
     def _handle_pin_submission(self):
         candidate = request.form.get("pin", "")
         outcome = self.limiter.submit(
-            request.remote_addr or "", candidate, self.pin, hmac.compare_digest
+            request.remote_addr or "", candidate, self.pin, compare_pin
         )
         if outcome == RESULT_OK:
             session.clear()

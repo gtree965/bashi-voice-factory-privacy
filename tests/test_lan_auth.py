@@ -420,6 +420,59 @@ class PinSubmissionBodyCheckTests(unittest.TestCase):
         self.assertEqual([], self.calls)
 
 
+class RecordingHandler(logging.Handler):
+    def __init__(self, sink):
+        super().__init__()
+        self.sink = sink
+
+    def emit(self, record):
+        self.sink.append(self.format(record))
+
+
+class NonAsciiPinInputTests(unittest.TestCase):
+    """A PIN field is free text: anything that is not the PIN is just wrong."""
+
+    SAMPLES = (
+        "１２３４５６",  # full-width digits
+        "密碼１２３",
+        "🔒🔒🔒🔒🔒🔒",
+        "12345\u00a06",  # non-breaking space
+    )
+
+    def test_compare_pin_never_raises(self):
+        with self.subTest(case="full_width"):
+            self.assertFalse(lan_auth.compare_pin("１２３４５６", "123456"))
+        with self.subTest(case="cjk"):
+            self.assertFalse(lan_auth.compare_pin("密碼", "123456"))
+        with self.subTest(case="not_a_string"):
+            self.assertFalse(lan_auth.compare_pin(None, "123456"))
+        with self.subTest(case="lone_surrogate"):
+            self.assertFalse(lan_auth.compare_pin("\ud800", "123456"))
+        with self.subTest(case="exact"):
+            self.assertTrue(lan_auth.compare_pin("123456", "123456"))
+
+    def test_non_ascii_input_is_a_counted_failure_not_a_500(self):
+        app, _ = make_app()
+        state = lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app)
+        records = []
+        handler = RecordingHandler(records)
+        flask_logger = logging.getLogger(app.name)
+        flask_logger.addHandler(handler)
+        try:
+            for index, sample in enumerate(self.SAMPLES, start=1):
+                with self.subTest(sample=sample):
+                    response = login(client, sample)
+                    self.assertEqual(200, response.status_code)
+                    self.assertIn("PIN 未被接受", response.get_data(as_text=True))
+                    self.assertEqual(index, state.limiter.failures_for(LAN_REMOTE))
+                    self.assertEqual(index, state.limiter.global_failures)
+        finally:
+            flask_logger.removeHandler(handler)
+
+        self.assertNotIn("Traceback", "\n".join(records))
+
+
 class PerIpLockoutTests(unittest.TestCase):
     def test_lockout_after_the_limit_then_recovery(self):
         clock = FakeClock()
