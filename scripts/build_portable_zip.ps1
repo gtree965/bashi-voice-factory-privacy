@@ -483,6 +483,7 @@ function Stage-Package {
         "download_cuda_runtime.py",
         "download_gguf_model.py",
         "download_utils.py",
+        "lan_auth.py",
         "LICENSE",
         "local_tts_engine.py",
         "local_tts_engine_gguf.py",

@@ -28,6 +28,7 @@ from backend_probe import (  # noqa: E402
     bootstrap_backend_selection,
     format_selection_log_line,
 )
+import lan_auth  # noqa: E402
 from logging_setup import get_logger, setup_logging  # noqa: E402
 from utils import cleanup_old_files  # noqa: E402
 
@@ -202,8 +203,13 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=5050, help="Port to bind to")
     args = parser.parse_args()
 
+    # Non-loopback IPv6 and host names cannot be guarded by the request checks,
+    # so they are refused before anything heavy starts.
+    lan_auth.reject_unsupported_bind_host(args.host, logger=logger)
+
     _bootstrap_backend_or_exit()
     app = create_app()
+    lan_state = lan_auth.install(app, args.host, args.port)
 
     output_dir = app.config["BASHI_OUTPUT_DIR"]
     upload_dir = app.config["BASHI_UPLOAD_DIR"]
@@ -218,8 +224,8 @@ if __name__ == "__main__":
     print("本地隐私版：Qwen3 本地语音 + sherpa 离线转写")
     logger.info("=" * 50)
 
-    if args.host == "0.0.0.0":
-        logger.info("Starting server at http://0.0.0.0:%s (Network Accessible)", args.port)
+    if lan_state.enabled:
+        logger.info("Starting server at http://%s:%s (Network Accessible)", args.host, args.port)
     else:
         logger.info("Starting server at http://%s:%s (Local Only)", args.host, args.port)
 
@@ -229,5 +235,7 @@ if __name__ == "__main__":
     _log_launcher_handoff_elapsed()
 
     _run_startup_warmup_if_requested()
+
+    lan_state.announce_pin()
 
     app.run(debug=False, host=args.host, port=args.port)
