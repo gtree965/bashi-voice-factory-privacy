@@ -527,6 +527,15 @@ class LanAuthState:
         if request.path == LOCAL_PIN_API_PATH:
             return self.local_pin_response()
 
+        # 2. Cross-site check on state-changing methods (D7), in both modes.
+        # It is what makes the loopback exemption in step 4 safe: without it,
+        # any web page could make the visitor's own browser POST to
+        # 127.0.0.1. It also closes the same hole in the default local-only
+        # mode, where three endpoints take no JSON body at all.
+        rejection = self._cross_site_rejection()
+        if rejection is not None:
+            return rejection
+
         if not self.enabled:
             return None
 
@@ -547,6 +556,28 @@ class LanAuthState:
 
         # 6. Everything else is unauthenticated.
         return self._unauthenticated_response()
+
+    def _cross_site_rejection(self):
+        """403 for state-changing requests that did not come from our own page.
+
+        ``Sec-Fetch-Site`` wins when present; otherwise ``Origin`` has to match
+        the request's own Host exactly. A client that sends neither is not a
+        browser and is let through.
+        """
+        if request.method.upper() in ("GET", "HEAD", "OPTIONS"):
+            return None
+
+        message = "Cross-site requests are not allowed."
+        site = request.headers.get("Sec-Fetch-Site")
+        if site is not None:
+            if site.strip().lower() != "same-origin":
+                return _json_error(403, message)
+            return None
+
+        origin = request.headers.get("Origin")
+        if origin is not None and origin.strip() != "http://" + request.host:
+            return _json_error(403, message)
+        return None
 
     def _reject_unusable_pin_body(self):
         """Check the submission before the body is parsed (see module docs)."""

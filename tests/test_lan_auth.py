@@ -908,6 +908,96 @@ class LocalPinEndpointTests(unittest.TestCase):
         self.assertEqual(400, response.status_code)
 
 
+class CrossSiteTests(unittest.TestCase):
+    """D7: state-changing requests have to come from our own page."""
+
+    STATE_CHANGING = (
+        ("POST", "/api/warmup"),
+        ("POST", "/api/cuda-upgrade/download"),
+        ("POST", "/api/stt/transcribe"),
+    )
+    FOREIGN_HEADERS = (
+        ("cross-site", {"Sec-Fetch-Site": "cross-site"}),
+        ("same-site", {"Sec-Fetch-Site": "same-site"}),
+        ("foreign origin", {"Origin": "http://evil.example"}),
+        ("null origin", {"Origin": "null"}),
+    )
+
+    def _request(self, bind, method, path, headers=None, remote=LAN_REMOTE, **kwargs):
+        app, calls = make_app()
+        state = lan_auth.install(app, bind, PORT)
+        client = make_client(app, remote=remote)
+        if state.enabled:
+            self.assertEqual(302, login(client, state.pin, remote=remote).status_code)
+        calls.clear()
+        response = call(client, method, path, headers, **kwargs)
+        return response, calls
+
+    def test_foreign_requests_are_refused_in_both_modes(self):
+        for bind in ("127.0.0.1", "0.0.0.0"):
+            for label, headers in self.FOREIGN_HEADERS:
+                for method, path in self.STATE_CHANGING:
+                    with self.subTest(bind=bind, headers=label, path=path):
+                        response, calls = self._request(bind, method, path, headers)
+                        self.assertEqual(403, response.status_code)
+                        self.assertEqual([], calls)
+
+    def test_same_origin_and_headerless_clients_pass(self):
+        for bind in ("127.0.0.1", "0.0.0.0"):
+            for label, headers in (
+                ("same-origin site", {"Sec-Fetch-Site": "same-origin"}),
+                ("own origin", {"Origin": "http://%s" % DEFAULT_HOST}),
+                ("no headers", None),
+            ):
+                with self.subTest(bind=bind, headers=label):
+                    response, calls = self._request(
+                        bind, "POST", "/api/warmup", headers
+                    )
+                    self.assertEqual(200, response.status_code)
+                    self.assertEqual(["warmup"], calls)
+
+    def test_get_requests_are_unaffected(self):
+        for bind in ("127.0.0.1", "0.0.0.0"):
+            with self.subTest(bind=bind):
+                response, calls = self._request(
+                    bind, "GET", "/api/voices", {"Sec-Fetch-Site": "cross-site"}
+                )
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(["voices"], calls)
+
+    def test_pin_submission_is_checked_too(self):
+        for bind in ("0.0.0.0",):
+            for label, headers in self.FOREIGN_HEADERS:
+                with self.subTest(bind=bind, headers=label):
+                    app, calls = make_app()
+                    state = lan_auth.install(app, bind, PORT)
+                    client = make_client(app)
+
+                    response = call(
+                        client, "POST", PIN_PAGE, headers, data={"pin": state.pin}
+                    )
+
+                    self.assertEqual(403, response.status_code)
+                    self.assertEqual([], calls)
+                    self.assertEqual(0, state.limiter.global_failures)
+
+    def test_pin_submission_from_its_own_page_passes(self):
+        app, _ = make_app()
+        state = lan_auth.install(app, "0.0.0.0", PORT)
+        client = make_client(app)
+
+        response = call(
+            client,
+            "POST",
+            PIN_PAGE,
+            {"Sec-Fetch-Site": "same-origin"},
+            data={"pin": state.pin},
+        )
+
+        self.assertEqual(302, response.status_code)
+        self.assertEqual("/", response.headers["Location"])
+
+
 class PinSecrecyTests(unittest.TestCase):
     def test_pin_absent_from_logs_and_stderr(self):
         clock = FakeClock()
