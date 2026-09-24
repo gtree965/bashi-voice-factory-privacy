@@ -625,16 +625,213 @@ exit /b %ERRORLEVEL%
     Assert-LauncherCompatibility -AppDest $appDest
 }
 
+function Test-PathInside {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Parent
+    )
+    # Deliberately a second copy of the comparison inside Assert-PathInside:
+    # that existing gate keeps its own code path untouched, and the compress
+    # retry below needs a boolean rather than an exception.
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $fullParent = [System.IO.Path]::GetFullPath($Parent).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    return $fullPath.StartsWith($fullParent + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-StagedPackageRelativePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$StageRoot,
+        [Parameter(Mandatory = $true)][string]$FullPath
+    )
+    $full = [System.IO.Path]::GetFullPath($FullPath)
+    $base = [System.IO.Path]::GetFullPath($StageRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $prefix = $base + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $full.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $null
+    }
+    return $full.Substring($prefix.Length).Replace('\', '/')
+}
+
+function Get-CompressAttemptPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][int]$Attempt
+    )
+    # Windows PowerShell 5.1 refuses an unknown extension such as .tmp here, so
+    # an attempt keeps the .zip extension and only the stem changes. The result
+    # is a sibling of the candidate name, i.e. inside dist\ but outside the
+    # staging tree, which is what keeps it out of the package.
+    $leaf = Split-Path -Leaf $ZipPath
+    if ($leaf.EndsWith(".zip", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $leaf = $leaf.Substring(0, $leaf.Length - 4)
+    }
+    return (Join-Path (Split-Path -Parent $ZipPath) ("{0}.attempt{1}.zip" -f $leaf, $Attempt))
+}
+
+function Remove-CompressAttemptFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    try {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    }
+    catch {
+        throw ("Could not delete the partially written ZIP {0}; stopping instead of carrying a half-written package forward: {1}" -f $Path, $_.Exception.Message)
+    }
+}
+
+function Test-IsStagedFileInUseError {
+    param(
+        [Parameter(Mandatory = $true)]$ErrorRecord,
+        [Parameter(Mandatory = $true)][string]$StageRoot
+    )
+    # Only ERROR_SHARING_VIOLATION (Win32 32, HRESULT 0x80070020) on a file
+    # inside the staging tree may be retried. Matching on PermissionDenied or
+    # on the module's error id would be too broad and would also retry a real
+    # access-denied condition, which never clears by waiting.
+    $sharingViolation = [int]0x80070020
+
+    $target = $ErrorRecord.TargetObject
+    if ($null -eq $target) {
+        return $false
+    }
+    $targetPath = ([string]$target).Trim()
+    if (-not $targetPath) {
+        return $false
+    }
+    if (-not (Test-PathInside -Path $targetPath -Parent $StageRoot)) {
+        return $false
+    }
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        if ($exception -is [System.IO.IOException] -and $exception.HResult -eq $sharingViolation) {
+            return $true
+        }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+function Assert-CompressedPackageReadable {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string]$StageRoot
+    )
+    # A compressed file that is structurally sound is not the same as one whose
+    # entries match the staging tree, so both are checked, and every entry is
+    # read to the end before the archive is allowed to take its final name.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $expected = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in Get-ChildItem -LiteralPath $StageRoot -Recurse -Force -File) {
+        $relative = Get-StagedPackageRelativePath -StageRoot $StageRoot -FullPath $file.FullName
+        if (-not $relative) {
+            throw ("Staged file is not below the staging root: {0}" -f $file.FullName)
+        }
+        [void]$expected.Add($relative)
+    }
+
+    $archive = $null
+    $entryCount = 0
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        $actual = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        $buffer = [byte[]]::new(65536)
+        foreach ($entry in $archive.Entries) {
+            $name = $entry.FullName.Replace('\', '/')
+            if ($name.EndsWith('/')) {
+                continue
+            }
+            $entryCount++
+            [void]$actual.Add($name)
+            $stream = $entry.Open()
+            try {
+                while ($stream.Read($buffer, 0, $buffer.Length) -gt 0) {
+                }
+            }
+            finally {
+                $stream.Dispose()
+            }
+        }
+    }
+    finally {
+        if ($null -ne $archive) {
+            $archive.Dispose()
+        }
+    }
+
+    if ($entryCount -ne $expected.Count) {
+        throw ("Compressed package holds {0} file entries, the staging directory holds {1}." -f $entryCount, $expected.Count)
+    }
+    if (-not $actual.SetEquals($expected)) {
+        throw "Compressed package entry paths do not match the staging directory."
+    }
+}
+
 function Compress-StagedPackage {
     param(
         [Parameter(Mandatory = $true)][string]$StageRoot,
-        [Parameter(Mandatory = $true)][string]$ZipPath
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [int]$MaxAttempts = 5,
+        [int[]]$RetryWaitSeconds = @(2, 4, 8, 16)
     )
     Assert-PathInside -Path $ZipPath -Parent $DistRoot
+    Assert-PathInside -Path $StageRoot -Parent $DistRoot
+
+    # The staging tree is built once, outside this function. Only the attempt
+    # files may exist in dist\ while compressing: the candidate name appears
+    # after the package has been checked, never before.
     if (Test-Path -LiteralPath $ZipPath) {
         Remove-Item -LiteralPath $ZipPath -Force
     }
-    Compress-Archive -Path (Join-Path $StageRoot "*") -DestinationPath $ZipPath -CompressionLevel Optimal
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $attemptZip = Get-CompressAttemptPath -ZipPath $ZipPath -Attempt $attempt
+        Assert-PathInside -Path $attemptZip -Parent $DistRoot
+        if (Test-PathInside -Path $attemptZip -Parent $StageRoot) {
+            throw ("Refusing to write a ZIP inside the staging directory: {0}" -f $attemptZip)
+        }
+
+        $failure = $null
+        try {
+            Compress-Archive -Path (Join-Path $StageRoot "*") -DestinationPath $attemptZip -CompressionLevel Optimal -ErrorAction Stop
+        }
+        catch {
+            Remove-CompressAttemptFile -Path $attemptZip
+            $failure = $_
+        }
+
+        if ($null -eq $failure) {
+            try {
+                Assert-CompressedPackageReadable -ZipPath $attemptZip -StageRoot $StageRoot
+            }
+            catch {
+                Remove-CompressAttemptFile -Path $attemptZip
+                throw
+            }
+            Move-Item -LiteralPath $attemptZip -Destination $ZipPath -Force
+            return
+        }
+
+        if (-not (Test-IsStagedFileInUseError -ErrorRecord $failure -StageRoot $StageRoot)) {
+            throw $failure
+        }
+        if ($attempt -ge $MaxAttempts) {
+            throw $failure
+        }
+
+        $waitSeconds = 0
+        if ($RetryWaitSeconds.Count -gt 0) {
+            $waitSeconds = $RetryWaitSeconds[[Math]::Min($attempt - 1, $RetryWaitSeconds.Count - 1)]
+        }
+        $inUseRelative = Get-StagedPackageRelativePath -StageRoot $StageRoot -FullPath ([string]$failure.TargetObject).Trim()
+        Write-Host ("  [compress-retry] attempt {0} of {1}: a staged file is still in use ({2}); waiting {3}s before retrying." -f $attempt, $MaxAttempts, $inUseRelative, $waitSeconds)
+        Start-Sleep -Seconds $waitSeconds
+    }
+
+    throw ("Compress-StagedPackage made no attempt at all (MaxAttempts = {0})." -f $MaxAttempts)
 }
 
 if ($NoPythonOnly) {
