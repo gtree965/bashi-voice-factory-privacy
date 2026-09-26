@@ -171,28 +171,59 @@ function Get-PipIndexArguments {
 
 function Read-LanBindHost {
     param(
-        [int]$TimeoutSeconds = 10,
+        [int]$TimeoutSeconds = 20,
         [scriptblock]$KeyAvailable = { [Console]::KeyAvailable },
         [scriptblock]$ReadKey = { [Console]::ReadKey($true).KeyChar },
-        [scriptblock]$Wait = { param([int]$Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+        [scriptblock]$Wait = { param([int]$Milliseconds) Start-Sleep -Milliseconds $Milliseconds },
+        [scriptblock]$Now = { Get-Date },
+        [scriptblock]$ReportRemaining = {
+            param([int]$Seconds)
+            # Redrawn in place so a 20-second wait does not scroll the answer
+            # away; the padding hides the tail of a longer previous number.
+            Write-Host -NoNewline ("`r{0}" -f ('按 Y 允许局域网访问；按其他任意键立即选择仅本机（剩余 {0} 秒）      ' -f $Seconds))
+        },
+        [scriptblock]$ReportChoice = {
+            param([string]$Message)
+            Write-Host ""
+            Write-Host $Message
+        }
     )
 
     $selectedHost = "127.0.0.1"
+    $choiceMessage = "已选择：仅本机（超时默认）"
     try {
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        while ((Get-Date) -lt $deadline) {
+        $deadline = (& $Now).AddSeconds($TimeoutSeconds)
+        $remaining = $TimeoutSeconds
+        & $ReportRemaining $remaining
+        while ((& $Now) -lt $deadline) {
             if (& $KeyAvailable) {
                 $key = & $ReadKey
                 if ($key -match '^[Yy]$') {
                     $selectedHost = "0.0.0.0"
+                    $choiceMessage = "已选择：允许局域网访问"
+                }
+                else {
+                    $choiceMessage = "已选择：仅本机（按键）"
                 }
                 break
             }
             & $Wait 200
+            $secondsLeft = [int][Math]::Ceiling(($deadline - (& $Now)).TotalSeconds)
+            if ($secondsLeft -lt 0) { $secondsLeft = 0 }
+            if ($secondsLeft -ne $remaining) {
+                $remaining = $secondsLeft
+                & $ReportRemaining $remaining
+            }
         }
     }
     catch {
         # Redirected stdin and hosts without a console safely keep the default.
+    }
+    try {
+        & $ReportChoice $choiceMessage
+    }
+    catch {
+        # The echo is cosmetic; a host without a console must not change the choice.
     }
     return $selectedHost
 }
@@ -652,11 +683,6 @@ Remove-Item Env:USE_PYTORCH_BACKEND -ErrorAction SilentlyContinue
 if (-not $BindHost) {
     Write-Host ""
     Write-Host "========================================================"
-    Write-Host "DO YOU WANT TO ALLOW OTHER DEVICES ON YOUR NETWORK TO ACCESS THIS SERVER?"
-    Write-Host "是否允许局域网内其他设备（如手机、平板）访问本服务器？"
-    Write-Host '[Y] Yes / 允许 (Host on 0.0.0.0)'
-    Write-Host '[N] No / 仅本机 (127.0.0.1) — 10 秒未选择默认 N / defaults to N in 10s'
-    Write-Host "========================================================"
     Write-Host '[!] WARNING / 警告'
     Write-Host '    Anyone who can reach this port on your network can open this app.'
     Write-Host '    任何能访问该端口的设备都可以打开本程序。'
@@ -666,6 +692,12 @@ if (-not $BindHost) {
     Write-Host '    Only enable this on a network you trust.'
     Write-Host '    请仅在信任的网络上开启。'
     Write-Host "========================================================"
+    Write-Host ""
+    Write-Host "DO YOU WANT TO ALLOW OTHER DEVICES ON YOUR NETWORK TO ACCESS THIS SERVER?"
+    Write-Host "是否允许局域网内其他设备（如手机、平板）访问本服务器？"
+    Write-Host '[Y] Yes / 允许 (Host on 0.0.0.0)'
+    Write-Host '[N] No / 仅本机 (127.0.0.1; any other key selects it immediately)'
+    Write-Host '[N] 仅本机（按其他任意键立即选择；20 秒未选择默认仅本机）'
     $BindHost = Read-LanBindHost
 }
 
