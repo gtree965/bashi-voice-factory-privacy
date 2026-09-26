@@ -272,6 +272,125 @@ function Get-BindHostDisplayHost {
     }
 }
 
+function Get-LanDisplayAddress {
+    param(
+        [object[]]$Adapters = @(),
+        [object[]]$Addresses = @(),
+        [object[]]$Routes = @(),
+        [object[]]$InterfaceMetrics = @(),
+        [object[]]$NetworkProfiles = @()
+    )
+
+    # Only a physical adapter that is up, with a private IPv4 address and a
+    # default route on the same interface whose next hop falls inside that
+    # address's own subnet, is a candidate. Everything else is left out on
+    # purpose: a virtual adapter may expose addresses that
+    # other devices cannot reach, and a machine without a default route has no
+    # address this function can say anything about. The inputs are plain
+    # objects projected by the caller, so the whole selection can be fed with
+    # synthetic snapshots.
+    function Test-PrivateLanAddress {
+        param([System.Net.IPAddress]$Address)
+        $bytes = $Address.GetAddressBytes()
+        if ($bytes[0] -eq 10) { return $true }
+        if ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) { return $true }
+        if ($bytes[0] -eq 192 -and $bytes[1] -eq 168) { return $true }
+        return $false
+    }
+
+    function Test-SameSubnet {
+        param(
+            [System.Net.IPAddress]$Address,
+            [int]$PrefixLength,
+            [System.Net.IPAddress]$Candidate
+        )
+        if ($PrefixLength -lt 1 -or $PrefixLength -gt 32) { return $false }
+        $addressBytes = $Address.GetAddressBytes()
+        $candidateBytes = $Candidate.GetAddressBytes()
+        if ($candidateBytes.Length -ne 4) { return $false }
+        for ($octet = 0; $octet -lt 4; $octet++) {
+            $bits = [Math]::Min(8, [Math]::Max(0, $PrefixLength - $octet * 8))
+            if ($bits -le 0) { break }
+            $mask = [byte]((0xFF -shl (8 - $bits)) -band 0xFF)
+            if (($addressBytes[$octet] -band $mask) -ne ($candidateBytes[$octet] -band $mask)) { return $false }
+        }
+        return $true
+    }
+
+    $none = [pscustomobject]@{
+        Address = ""
+        AdapterName = ""
+        NetworkCategory = ""
+        Reason = "none"
+    }
+
+    $metricByIndex = @{}
+    foreach ($record in $InterfaceMetrics) {
+        $metricByIndex[[int]$record.InterfaceIndex] = [int]$record.InterfaceMetric
+    }
+
+    $categoryByIndex = @{}
+    foreach ($profile in $NetworkProfiles) {
+        $index = [int]$profile.InterfaceIndex
+        if (-not $categoryByIndex.ContainsKey($index)) {
+            $categoryByIndex[$index] = [string]$profile.NetworkCategory
+        }
+    }
+
+    $physicalAdapters = @{}
+    foreach ($adapter in $Adapters) {
+        if ($adapter.Status -ne "Up" -or $adapter.HardwareInterface -ne $true) { continue }
+        $physicalAdapters[[int]$adapter.InterfaceIndex] = $adapter
+    }
+    if ($physicalAdapters.Count -eq 0) { return $none }
+
+    $best = $null
+    foreach ($entry in $Addresses) {
+        $interfaceIndex = [int]$entry.InterfaceIndex
+        if (-not $physicalAdapters.ContainsKey($interfaceIndex)) { continue }
+
+        $address = $null
+        if (-not [System.Net.IPAddress]::TryParse([string]$entry.IPAddress, [ref]$address)) { continue }
+        if ($address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { continue }
+        if (-not (Test-PrivateLanAddress -Address $address)) { continue }
+
+        foreach ($route in $Routes) {
+            if ([int]$route.InterfaceIndex -ne $interfaceIndex) { continue }
+            if ([string]$route.DestinationPrefix -ne "0.0.0.0/0") { continue }
+            $nextHop = $null
+            if (-not [System.Net.IPAddress]::TryParse([string]$route.NextHop, [ref]$nextHop)) { continue }
+            if (-not (Test-SameSubnet -Address $address -PrefixLength ([int]$entry.PrefixLength) -Candidate $nextHop)) { continue }
+
+            # Lowest route metric plus interface metric wins; the interface
+            # number only breaks a tie. This is the ordering this function
+            # uses inside the physical adapters, not the routing decision
+            # Windows makes across every route.
+            $interfaceMetric = 0
+            if ($metricByIndex.ContainsKey($interfaceIndex)) { $interfaceMetric = $metricByIndex[$interfaceIndex] }
+            $metric = [int]$route.RouteMetric + $interfaceMetric
+            if ($null -eq $best -or $metric -lt $best.Metric -or ($metric -eq $best.Metric -and $interfaceIndex -lt $best.InterfaceIndex)) {
+                $best = [pscustomobject]@{
+                    Address = $address.ToString()
+                    AdapterName = [string]$physicalAdapters[$interfaceIndex].Name
+                    InterfaceIndex = $interfaceIndex
+                    Metric = $metric
+                }
+            }
+        }
+    }
+
+    if ($null -eq $best) { return $none }
+
+    $category = ""
+    if ($categoryByIndex.ContainsKey($best.InterfaceIndex)) { $category = $categoryByIndex[$best.InterfaceIndex] }
+    return [pscustomobject]@{
+        Address = $best.Address
+        AdapterName = $best.AdapterName
+        NetworkCategory = $category
+        Reason = "ok"
+    }
+}
+
 function Set-PortablePthEntries {
     $portableAppEntry = ".."
     $portableGgufEntry = "..\..\vulkan_backend_spike\Qwen3-TTS-GGUF"
@@ -709,14 +828,77 @@ Write-Host ""
 
 $bindMode = Get-BindHostMode -BindHost $BindHost
 $detectedLanIp = ''
+$detectedLanAdapter = ''
+$lanNetworkIsPublic = $false
 if ($bindMode -eq 'Network') {
-    $detectedLanIp = (
-        Get-NetIPConfiguration -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
-            Select-Object -ExpandProperty IPv4Address -First 1
-    ).IPAddress
+    # Read-only queries. The old first-default-gateway query is gone: it
+    # returned whichever adapter came first, virtual ones included, and it
+    # said nothing about whether the gateway is on that adapter's own subnet.
+    $lanAdapters = @(
+        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+            [pscustomobject]@{
+                Name = $_.Name
+                Status = $_.Status
+                HardwareInterface = $_.HardwareInterface
+                InterfaceIndex = $_.ifIndex
+            }
+        }
+    )
+    $lanAddresses = @(
+        Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+            [pscustomobject]@{
+                InterfaceIndex = $_.InterfaceIndex
+                IPAddress = $_.IPAddress
+                PrefixLength = $_.PrefixLength
+            }
+        }
+    )
+    $lanRoutes = @(
+        Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | ForEach-Object {
+            [pscustomobject]@{
+                InterfaceIndex = $_.InterfaceIndex
+                DestinationPrefix = $_.DestinationPrefix
+                NextHop = $_.NextHop
+                RouteMetric = $_.RouteMetric
+            }
+        }
+    )
+    $lanInterfaceMetrics = @(
+        Get-NetIPInterface -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+            [pscustomobject]@{
+                InterfaceIndex = $_.ifIndex
+                InterfaceMetric = $_.InterfaceMetric
+            }
+        }
+    )
+    $lanProfiles = @(
+        Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object {
+            [pscustomobject]@{
+                InterfaceIndex = $_.InterfaceIndex
+                NetworkCategory = $_.NetworkCategory
+            }
+        }
+    )
+
+    $lanSuggestion = Get-LanDisplayAddress -Adapters $lanAdapters -Addresses $lanAddresses -Routes $lanRoutes -InterfaceMetrics $lanInterfaceMetrics -NetworkProfiles $lanProfiles
+    if ($lanSuggestion.Address) {
+        $detectedLanIp = $lanSuggestion.Address
+        $detectedLanAdapter = $lanSuggestion.AdapterName
+        $lanNetworkIsPublic = $lanSuggestion.NetworkCategory -eq 'Public'
+    }
 }
 $displayHost = Get-BindHostDisplayHost -BindHost $BindHost -DetectedLanIp $detectedLanIp
+
+# Hand the address to app.py for the PIN block. Not a secret; a concrete bind
+# address answers for itself, and an unresolved one stays empty so that app.py
+# points at this output instead of naming a possibly unreachable address.
+$env:BASHI_LAN_DISPLAY_HOST = ''
+if ($bindMode -eq 'Network' -and $detectedLanIp) {
+    $env:BASHI_LAN_DISPLAY_HOST = $detectedLanIp
+}
+elseif ($bindMode -eq 'Specific') {
+    $env:BASHI_LAN_DISPLAY_HOST = $BindHost.Trim()
+}
 
 if ($bindMode -eq 'Local') {
     Write-Host "--------------------------------------------------------"
@@ -729,11 +911,27 @@ else {
     Write-Host "--------------------------------------------------------"
     Write-Host "Server is accessible from other devices at:"
     Write-Host "可以从局域网其他设备访问此地址:"
-    Write-Host "http://${displayHost}:$Port"
+    if ($bindMode -eq 'Network' -and -not $detectedLanIp) {
+        Write-Host "Could not determine the address other devices can use."
+        Write-Host "未能确定其他设备可用的局域网地址；请在命令行运行 ipconfig，"
+        Write-Host "查看「以太网」或「WLAN」的 IPv4 地址。"
+    }
+    else {
+        Write-Host "http://${displayHost}:$Port"
+        if ($detectedLanAdapter) {
+            Write-Host "（网卡：$detectedLanAdapter）"
+        }
+    }
     Write-Host ""
     Write-Host "A one-time PIN is printed in this console; enter it on the"
     Write-Host "other device before it can do anything."
     Write-Host "控制台会打印一次性 PIN；其他设备需先输入它才能操作。"
+    if ($lanNetworkIsPublic) {
+        Write-Host "This network is marked as Public; Windows Firewall may block other devices."
+        Write-Host "此网络被 Windows 标为「公用」，防火墙可能阻止其他设备访问。"
+        Write-Host "如其他设备打不开，请检查 Windows 防火墙是否有允许本程序入站的规则。"
+        Write-Host "仅在你信任这个网络时，才考虑把它改为「专用」；改为专用本身也不保证能连通。"
+    }
     Write-Host "--------------------------------------------------------"
 }
 
