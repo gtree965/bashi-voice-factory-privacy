@@ -156,7 +156,17 @@ function Get-PipIndexArguments {
     if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @("http", "https") -or -not $uri.Host) {
         throw "Invalid pip index URL: $IndexUrl"
     }
-    return @("-i", $uri.AbsoluteUri, "--trusted-host", $uri.Host)
+    # --trusted-host is not "allow plain http": pip attaches an adapter that
+    # skips certificate verification for both the http:// and the https:// URLs
+    # of that host. The built-in indexes are HTTPS and must be verified, so the
+    # flag is never added for them. Only an index the user selected through
+    # BASHI_PIP_INDEX_URL needs it, and only when that index is plain http,
+    # because pip refuses an http index without it.
+    $arguments = @("-i", $uri.AbsoluteUri)
+    if ($uri.Scheme -eq "http") {
+        $arguments += @("--trusted-host", $uri.Host)
+    }
+    return $arguments
 }
 
 function Read-LanBindHost {
@@ -422,6 +432,11 @@ if (-not [string]::IsNullOrWhiteSpace($pipIndexOverride)) {
     $pipIndexUrls = @($pipIndexOverride.Trim())
     Write-Host ("[INFO] BASHI_PIP_INDEX_URL override active: {0}" -f $pipIndexUrls[0])
     Write-Host ("[INFO] 已使用 BASHI_PIP_INDEX_URL 指定依赖源：{0}" -f $pipIndexUrls[0])
+    $overrideUri = $null
+    if ([System.Uri]::TryCreate($pipIndexUrls[0], [System.UriKind]::Absolute, [ref]$overrideUri) -and $overrideUri.Scheme -eq 'http') {
+        Write-Host ("[WARN] This override uses plain http; pip will not verify certificates for {0}." -f $overrideUri.Host)
+        Write-Host ("[WARN] 该源为 http，pip 对 {0} 不校验证书。" -f $overrideUri.Host)
+    }
 }
 elseif ($timeZone -like "*China*" -or $culture -like "zh-*") {
     $pipIndexUrls = @($chinaPipIndexUrls)

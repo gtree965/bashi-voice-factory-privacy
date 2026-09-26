@@ -1,9 +1,40 @@
+import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
+LAUNCHER = APP_ROOT / "run_portable.ps1"
+# The launcher ships for Windows PowerShell 5.1 (run_portable.bat starts it by
+# name), so the extracted functions are exercised under that interpreter.
+POWERSHELL = "powershell.exe"
+
+
+def _invoke_launcher(functions, expression: str) -> str:
+    """Define the named launcher functions in Windows PowerShell 5.1, run *expression*."""
+    escaped_path = str(LAUNCHER).replace("'", "''")
+    command = (
+        "$tokens=$null; $errors=$null; "
+        f"$ast=[System.Management.Automation.Language.Parser]::ParseFile('{escaped_path}', "
+        "[ref]$tokens, [ref]$errors); "
+    )
+    for name in functions:
+        command += (
+            "$fn=$ast.Find({param($node) $node -is "
+            "[System.Management.Automation.Language.FunctionDefinitionAst] -and "
+            f"$node.Name -eq '{name}'}}, $true); "
+            "Invoke-Expression $fn.Extent.Text; "
+        )
+    command += expression
+    result = subprocess.run(
+        [POWERSHELL, "-NoProfile", "-Command", command],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
 
 
 class PortableDependencyInstallTests(unittest.TestCase):
@@ -313,6 +344,77 @@ class PortableDependencyInstallTests(unittest.TestCase):
             precheck.index('$env:KMP_DUPLICATE_LIB_OK = "TRUE"'),
             precheck.index('Invoke-Logged -Step "import smoke"'),
         )
+
+
+class PipIndexCertificateTests(unittest.TestCase):
+    """S5: installing dependencies must verify the mirror certificates."""
+
+    BUILT_IN_HTTPS_INDEXES = (
+        "https://mirrors.aliyun.com/pypi/simple/",
+        "https://pypi.tuna.tsinghua.edu.cn/simple/",
+        "https://pypi.org/simple/",
+    )
+
+    def test_built_in_https_indexes_never_disable_certificate_checks(self) -> None:
+        for index_url in self.BUILT_IN_HTTPS_INDEXES:
+            with self.subTest(index_url=index_url):
+                output = _invoke_launcher(
+                    ("Get-PipIndexArguments",),
+                    f"Get-PipIndexArguments -IndexUrl '{index_url}' | ConvertTo-Json -Compress",
+                )
+
+                self.assertEqual(["-i", index_url], json.loads(output))
+
+    def test_plain_http_override_keeps_the_trusted_host_exception(self) -> None:
+        index_url = "http://mirror.example.com:8080/simple/"
+
+        output = _invoke_launcher(
+            ("Get-PipIndexArguments",),
+            f"Get-PipIndexArguments -IndexUrl '{index_url}' | ConvertTo-Json -Compress",
+        )
+
+        self.assertEqual(
+            ["-i", index_url, "--trusted-host", "mirror.example.com"],
+            json.loads(output),
+        )
+
+    def test_invalid_index_url_still_throws(self) -> None:
+        output = _invoke_launcher(
+            ("Get-PipIndexArguments",),
+            "try { $null = Get-PipIndexArguments -IndexUrl 'not-a-url'; 'NO-THROW' } "
+            "catch { 'THREW' }",
+        )
+
+        self.assertEqual("THREW", output)
+
+    def test_launcher_warns_when_the_override_index_is_plain_http(self) -> None:
+        source = LAUNCHER.read_text(encoding="utf-8")
+
+        self.assertIn("[WARN] This override uses plain http", source)
+        self.assertIn("该源为 http，pip 对", source)
+        # The warning names the host only: the override URL may carry
+        # credentials, and this line is printed before any masking applies.
+        self.assertIn("-f $overrideUri.Host", source)
+
+    def test_embed_precheck_never_disables_certificate_checks(self) -> None:
+        precheck = (APP_ROOT / "scripts" / "precheck_py312_embed.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        index_args_lines = [
+            line.strip()
+            for line in precheck.splitlines()
+            if line.strip().startswith("$indexArgs")
+        ]
+        self.assertEqual(3, len(index_args_lines))
+        for line in index_args_lines:
+            with self.subTest(line=line):
+                self.assertNotIn("--trusted-host", line)
+        self.assertIn(
+            '$indexArgs = @("-i", "https://mirrors.aliyun.com/pypi/simple/")',
+            precheck,
+        )
+        self.assertIn('$indexArgs = @("-i", "https://pypi.org/simple")', precheck)
 
 
 if __name__ == "__main__":

@@ -83,7 +83,10 @@ function Add-PthEntry {
 
 $indexArgs = @()
 if ($Index -eq "aliyun") {
-    $indexArgs = @("-i", "https://mirrors.aliyun.com/pypi/simple/", "--trusted-host", "mirrors.aliyun.com")
+    # No --trusted-host: the mirror serves HTTPS and pip must verify it. The
+    # flag does not mean "allow http", it switches certificate checks off for
+    # the whole host, which is exactly what the launcher no longer does.
+    $indexArgs = @("-i", "https://mirrors.aliyun.com/pypi/simple/")
 }
 else {
     $indexArgs = @("-i", "https://pypi.org/simple")
