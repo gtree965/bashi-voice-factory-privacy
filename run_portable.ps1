@@ -1,4 +1,4 @@
-﻿param(
+﻿﻿param(
     [string]$BindHost = $env:BASHI_HOST,
     [int]$Port = $(if ($env:BASHI_PORT) { [int]$env:BASHI_PORT } else { 5050 })
 )
@@ -12,12 +12,18 @@ $EmbedDirName = "python-3.12.10-embed-amd64"
 $EmbedDir = Join-Path $AppRoot $EmbedDirName
 $Python = Join-Path $EmbedDir "python.exe"
 $PthFile = Join-Path $EmbedDir "python312._pth"
-$pipBackoffSeconds = @(5, 30, 120)
-$chinaPipIndexUrls = @(
-    "https://mirrors.aliyun.com/pypi/simple/",
-    "https://pypi.tuna.tsinghua.edu.cn/simple/",
-    "https://pypi.org/simple/"
-)
+$pipBackoffSeconds = @(5, 30, 30, 30)
+# The candidates for the speed test, in the order that is used when the test
+# cannot run or every mirror fails. mirror_probe.py holds the matching short
+# names and the probe file path; a test keeps the two lists in step.
+$pipMirrorIndexUrls = [ordered]@{
+    aliyun = "https://mirrors.aliyun.com/pypi/simple/"
+    tuna = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+    tencent = "https://mirrors.cloud.tencent.com/pypi/simple/"
+    huawei = "https://repo.huaweicloud.com/repository/pypi/simple/"
+    pypi = "https://pypi.org/simple/"
+}
+$chinaPipIndexUrls = @($pipMirrorIndexUrls.Values)
 $officialPipIndexUrl = "https://pypi.org/simple/"
 
 function Test-LocalPortListening {
@@ -167,6 +173,148 @@ function Get-PipIndexArguments {
         $arguments += @("--trusted-host", $uri.Host)
     }
     return $arguments
+}
+
+function Get-PipIndexDisplayUrl {
+    param([Parameter(Mandatory = $true)][string]$IndexUrl)
+
+    # An index URL may carry user information when it comes from
+    # BASHI_PIP_INDEX_URL; pip still receives the real URL, but nothing the
+    # launcher prints or logs may show the credentials.
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($IndexUrl, [System.UriKind]::Absolute, [ref]$uri) -or -not $uri.Host) {
+        return "<unparsable index URL>"
+    }
+    $userPart = ""
+    if ($uri.UserInfo) { $userPart = "***@" }
+    $portPart = ""
+    if (-not $uri.IsDefaultPort) { $portPart = ":" + $uri.Port }
+    return ("{0}://{1}{2}{3}{4}" -f $uri.Scheme, $userPart, $uri.Host, $portPart, $uri.PathAndQuery)
+}
+
+function Test-PipProbeEligible {
+    param(
+        [string]$Override = $env:BASHI_PIP_INDEX_URL,
+        [string]$TimeZoneId = (Get-TimeZone).Id,
+        [string]$CultureName = [System.Globalization.CultureInfo]::CurrentCulture.Name
+    )
+
+    # The speed test only ranks the built-in Chinese chain. An override is the
+    # user's own choice and is used as is, and every other locale keeps the
+    # single official index without contacting additional mirrors.
+    if (-not [string]::IsNullOrWhiteSpace($Override)) { return $false }
+    return ($TimeZoneId -like "*China*" -or $CultureName -like "zh-*")
+}
+
+$pipMirrorProbeCache = @{ Done = $false; RankedUrls = $null }
+
+function Invoke-PipMirrorProbeProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [int]$TimeoutSeconds = 15
+    )
+
+    # Only the probe's own [mirror-probe] lines are kept; anything else on its
+    # stdout or stderr (a traceback, for example) never reaches the console or
+    # launch_log.txt.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $Python
+    $startInfo.Arguments = '"{0}"' -f $ScriptPath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    [void]$process.StandardError.ReadToEndAsync()
+    $exited = $process.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $exited) {
+        try { $process.Kill() } catch { }
+        [void]$process.WaitForExit(5000)
+        return [pscustomobject]@{ TimedOut = $true; ExitCode = -1; Lines = @() }
+    }
+
+    $lines = @()
+    foreach ($line in @(([string]$stdoutTask.Result) -split "`r?`n")) {
+        if ($line -match '^\[mirror-probe\] ') { $lines += $line.TrimEnd() }
+    }
+    return [pscustomobject]@{ TimedOut = $false; ExitCode = $process.ExitCode; Lines = @($lines) }
+}
+
+function Get-PipRankedPipIndexUrls {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$FallbackUrls,
+        [Parameter(Mandatory = $true)][bool]$ProbeEligible,
+        [int]$ProbeTimeoutSeconds = 15
+    )
+
+    # One probe per launch: the first caller runs it, every later caller reuses
+    # the result, and both install entry points share this function.
+    if ($pipMirrorProbeCache.Done) {
+        if ($pipMirrorProbeCache.RankedUrls) { return @($pipMirrorProbeCache.RankedUrls) }
+        return @($FallbackUrls)
+    }
+    $pipMirrorProbeCache.Done = $true
+
+    if (-not $ProbeEligible -or @($FallbackUrls).Count -lt 2) {
+        return @($FallbackUrls)
+    }
+
+    $probeScript = Join-Path $AppRoot "mirror_probe.py"
+    if (-not (Test-Path -LiteralPath $probeScript)) {
+        '[STEP] mirror probe skipped: mirror_probe.py is missing' | Add-Content -Path $LogFile -Encoding utf8
+        return @($FallbackUrls)
+    }
+
+    $probeNames = @(
+        $pipMirrorIndexUrls.GetEnumerator() |
+            Where-Object { $FallbackUrls -contains $_.Value } |
+            ForEach-Object { $_.Key }
+    )
+    Write-Host ("[INFO] Testing the package mirrors before downloading: {0} (at most 1 MiB each)." -f ($probeNames -join ', '))
+    Write-Host ("[INFO] 下载前先测试依赖源：{0}（每个最多 1 MiB）。" -f ($probeNames -join '、'))
+    Write-Host "[INFO] Normally about 10 seconds, at most 15 seconds before falling back to the fixed order."
+    Write-Host "[INFO] 正常约 10 秒；异常时最迟 15 秒回退到固定顺序。"
+
+    $probe = Invoke-PipMirrorProbeProcess -ScriptPath $probeScript -TimeoutSeconds $ProbeTimeoutSeconds
+    foreach ($line in @($probe.Lines)) {
+        Write-Host $line
+        Add-Content -Path $LogFile -Encoding utf8 -Value $line
+    }
+    if ($probe.TimedOut) {
+        Write-Host "[INFO] The mirror test did not finish in time; using the fixed order."
+        Write-Host "[INFO] 依赖源测速未在时限内完成；改用固定顺序。"
+        '[STEP] mirror probe timed out' | Add-Content -Path $LogFile -Encoding utf8
+        return @($FallbackUrls)
+    }
+
+    $rankLine = @($probe.Lines | Where-Object { $_ -match '^\[mirror-probe\] rank ' } | Select-Object -Last 1)
+    if (-not $rankLine) {
+        '[STEP] mirror probe output had no ranking; using the fixed order' | Add-Content -Path $LogFile -Encoding utf8
+        return @($FallbackUrls)
+    }
+
+    $rankedUrls = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @(($rankLine[0] -replace '^\[mirror-probe\] rank ', '') -split ',')) {
+        $trimmedName = $name.Trim()
+        if (-not $trimmedName) { continue }
+        if ($pipMirrorIndexUrls.Contains($trimmedName)) {
+            $url = [string]$pipMirrorIndexUrls[$trimmedName]
+            if (-not $rankedUrls.Contains($url)) { [void]$rankedUrls.Add($url) }
+        }
+    }
+    foreach ($url in @($FallbackUrls)) {
+        if (-not $rankedUrls.Contains($url)) { [void]$rankedUrls.Add($url) }
+    }
+
+    if ($probe.ExitCode -ne 0) {
+        '[STEP] mirror probe found no usable mirror; using the fixed order' | Add-Content -Path $LogFile -Encoding utf8
+        return @($FallbackUrls)
+    }
+
+    $pipMirrorProbeCache.RankedUrls = @($rankedUrls)
+    return @($rankedUrls)
 }
 
 function Read-LanBindHost {
@@ -498,41 +646,47 @@ function Ensure-Pip {
         exit 1
     }
 
-    $pipBootstrapMaxAttempts = 3
-    $pipBootstrapBackoffSeconds = @(2, 5)
+    # Ranked once per launch; the dependency install below reuses this result.
+    $bootstrapPipIndexUrls = @(Get-PipRankedPipIndexUrls -FallbackUrls $pipIndexUrls -ProbeEligible $pipProbeEligible)
+    $pipBootstrapMaxAttempts = [Math]::Max(3, $bootstrapPipIndexUrls.Count)
+    $pipBootstrapBackoffSeconds = @(2, 5, 10, 10)
     $pipBootstrapExit = -1
     $lastPipBootstrapFailureText = ""
     for ($attempt = 1; $attempt -le $pipBootstrapMaxAttempts; $attempt++) {
-        $pipIndexPosition = [Math]::Min($attempt - 1, $pipIndexUrls.Count - 1)
-        $currentPipIndexUrl = $pipIndexUrls[$pipIndexPosition]
+        $pipIndexPosition = [Math]::Min($attempt - 1, $bootstrapPipIndexUrls.Count - 1)
+        $currentPipIndexUrl = $bootstrapPipIndexUrls[$pipIndexPosition]
+        $currentPipIndexDisplayUrl = Get-PipIndexDisplayUrl -IndexUrl $currentPipIndexUrl
         $bootstrapPipIndexArgs = @(Get-PipIndexArguments -IndexUrl $currentPipIndexUrl)
         if ($attempt -gt 1) {
-            $wait = $pipBootstrapBackoffSeconds[$attempt - 2]
-            $previousPipIndexPosition = [Math]::Min($attempt - 2, $pipIndexUrls.Count - 1)
-            $previousPipIndexUrl = $pipIndexUrls[$previousPipIndexPosition]
+            # The backoff list and the index list can be shorter than the
+            # attempt counter, so both indexes are clamped; an attempt must
+            # never read past the end and pass $null to Start-Sleep.
+            $wait = $pipBootstrapBackoffSeconds[[Math]::Min($attempt - 2, $pipBootstrapBackoffSeconds.Count - 1)]
+            $previousPipIndexPosition = [Math]::Min($attempt - 2, $bootstrapPipIndexUrls.Count - 1)
+            $previousPipIndexUrl = $bootstrapPipIndexUrls[$previousPipIndexPosition]
             Write-Host ""
             if ($lastPipBootstrapFailureText -match '(?i)403|Forbidden|denied by IP ACL') {
                 if ($currentPipIndexUrl -ne $previousPipIndexUrl) {
-                    Write-Host ('[INFO] The mirror refused this IP; switching to {0} in {1}s (pip bootstrap attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
-                    Write-Host ('[INFO] 镜像拒绝了本机 IP；{0} 秒后切换到 {1}（pip 引导第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipBootstrapMaxAttempts)
+                    Write-Host ('[INFO] The mirror refused this IP; switching to {0} in {1}s (pip bootstrap attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
+                    Write-Host ('[INFO] 镜像拒绝了本机 IP；{0} 秒后切换到 {1}（pip 引导第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipBootstrapMaxAttempts)
                 }
                 else {
-                    Write-Host ('[INFO] The package index refused this IP; retrying {0} in {1}s (pip bootstrap attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
-                    Write-Host ('[INFO] 依赖源拒绝了本机 IP；{0} 秒后重试 {1}（pip 引导第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipBootstrapMaxAttempts)
+                    Write-Host ('[INFO] The package index refused this IP; retrying {0} in {1}s (pip bootstrap attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
+                    Write-Host ('[INFO] 依赖源拒绝了本机 IP；{0} 秒后重试 {1}（pip 引导第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipBootstrapMaxAttempts)
                 }
             }
             elseif ($currentPipIndexUrl -ne $previousPipIndexUrl) {
-                Write-Host ('[INFO] pip bootstrap index failed; switching to {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
-                Write-Host ('[INFO] pip 引导依赖源失败；{0} 秒后切换到 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipBootstrapMaxAttempts)
+                Write-Host ('[INFO] pip bootstrap index failed; switching to {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
+                Write-Host ('[INFO] pip 引导依赖源失败；{0} 秒后切换到 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipBootstrapMaxAttempts)
             }
             else {
-                Write-Host ('[INFO] pip bootstrap index failed; retrying {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
-                Write-Host ('[INFO] pip 引导依赖源失败；{0} 秒后重试 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipBootstrapMaxAttempts)
+                Write-Host ('[INFO] pip bootstrap index failed; retrying {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipBootstrapMaxAttempts)
+                Write-Host ('[INFO] pip 引导依赖源失败；{0} 秒后重试 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipBootstrapMaxAttempts)
             }
             Start-Sleep -Seconds $wait
         }
 
-        ('[STEP] pip bootstrap index attempt {0}/{1}: {2}' -f $attempt, $pipBootstrapMaxAttempts, $currentPipIndexUrl) |
+        ('[STEP] pip bootstrap index attempt {0}/{1}: {2}' -f $attempt, $pipBootstrapMaxAttempts, $currentPipIndexDisplayUrl) |
             Add-Content -Path $LogFile -Encoding utf8
         $pipBootstrapResult = Invoke-NativeCommandCapture -Command {
             & $Python $getPip --isolated --timeout 60 --no-warn-script-location @bootstrapPipIndexArgs
@@ -580,8 +734,9 @@ $culture = [System.Globalization.CultureInfo]::CurrentCulture.Name
 $pipIndexOverride = $env:BASHI_PIP_INDEX_URL
 if (-not [string]::IsNullOrWhiteSpace($pipIndexOverride)) {
     $pipIndexUrls = @($pipIndexOverride.Trim())
-    Write-Host ("[INFO] BASHI_PIP_INDEX_URL override active: {0}" -f $pipIndexUrls[0])
-    Write-Host ("[INFO] 已使用 BASHI_PIP_INDEX_URL 指定依赖源：{0}" -f $pipIndexUrls[0])
+    $pipIndexDisplayUrl = Get-PipIndexDisplayUrl -IndexUrl $pipIndexUrls[0]
+    Write-Host ("[INFO] BASHI_PIP_INDEX_URL override active: {0}" -f $pipIndexDisplayUrl)
+    Write-Host ("[INFO] 已使用 BASHI_PIP_INDEX_URL 指定依赖源：{0}" -f $pipIndexDisplayUrl)
     $overrideUri = $null
     if ([System.Uri]::TryCreate($pipIndexUrls[0], [System.UriKind]::Absolute, [ref]$overrideUri) -and $overrideUri.Scheme -eq 'http') {
         Write-Host ("[WARN] This override uses plain http; pip will not verify certificates for {0}." -f $overrideUri.Host)
@@ -590,8 +745,8 @@ if (-not [string]::IsNullOrWhiteSpace($pipIndexOverride)) {
 }
 elseif ($timeZone -like "*China*" -or $culture -like "zh-*") {
     $pipIndexUrls = @($chinaPipIndexUrls)
-    Write-Host '[INFO] China timezone/locale detected. Using Aliyun -> Tsinghua -> PyPI fallback chain.'
-    Write-Host '[INFO] 检测到中国时区/语言环境，将按阿里云 → 清华 → PyPI 顺序安装依赖。'
+    Write-Host '[INFO] China timezone/locale detected. Using Aliyun -> Tsinghua -> Tencent -> Huawei -> PyPI fallback chain.'
+    Write-Host '[INFO] 检测到中国时区/语言环境，将按阿里云 → 清华 → 腾讯云 → 华为云 → PyPI 顺序安装依赖。'
 }
 else {
     # Overseas users stay on a single explicit PyPI index; retries reuse it to
@@ -601,6 +756,8 @@ else {
     Write-Host '[INFO] 使用官方 PyPI 依赖源并在瞬时失败时重试。'
 }
 $pipIndexArgs = @(Get-PipIndexArguments -IndexUrl $pipIndexUrls[0])
+# Decided once: the speed test ranks the built-in chain and nothing else.
+$pipProbeEligible = Test-PipProbeEligible -Override $pipIndexOverride -TimeZoneId $timeZone -CultureName $culture
 
 Ensure-Pip
 
@@ -636,7 +793,10 @@ else {
     Write-Host ""
     '[STEP] pip install -r requirements.txt' | Add-Content -Path $LogFile -Encoding utf8
 
-    $pipMaxAttempts = 3
+    # Same ranked list as the pip bootstrap used, when that ran; otherwise the
+    # first probe of this launch happens here.
+    $installPipIndexUrls = @(Get-PipRankedPipIndexUrls -FallbackUrls $pipIndexUrls -ProbeEligible $pipProbeEligible)
+    $pipMaxAttempts = [Math]::Max(3, $installPipIndexUrls.Count)
     $pipInstallExit = -1
     $firstFailedStepIndex = 0
     $pipOutputLines = [System.Collections.Generic.List[string]]::new()
@@ -663,36 +823,39 @@ else {
         }
     )
     for ($attempt = 1; $attempt -le $pipMaxAttempts; $attempt++) {
-        $pipIndexPosition = [Math]::Min($attempt - 1, $pipIndexUrls.Count - 1)
-        $currentPipIndexUrl = $pipIndexUrls[$pipIndexPosition]
+        $pipIndexPosition = [Math]::Min($attempt - 1, $installPipIndexUrls.Count - 1)
+        $currentPipIndexUrl = $installPipIndexUrls[$pipIndexPosition]
+        $currentPipIndexDisplayUrl = Get-PipIndexDisplayUrl -IndexUrl $currentPipIndexUrl
         $pipIndexArgs = @(Get-PipIndexArguments -IndexUrl $currentPipIndexUrl)
         if ($attempt -gt 1) {
-            $wait = $pipBackoffSeconds[$attempt - 2]
+            # Clamped like the bootstrap loop: an attempt must never read past
+            # the end of the backoff list and pass $null to Start-Sleep.
+            $wait = $pipBackoffSeconds[[Math]::Min($attempt - 2, $pipBackoffSeconds.Count - 1)]
             Write-Host ""
-            $previousPipIndexPosition = [Math]::Min($attempt - 2, $pipIndexUrls.Count - 1)
-            $previousPipIndexUrl = $pipIndexUrls[$previousPipIndexPosition]
+            $previousPipIndexPosition = [Math]::Min($attempt - 2, $installPipIndexUrls.Count - 1)
+            $previousPipIndexUrl = $installPipIndexUrls[$previousPipIndexPosition]
             if ($lastPipFailureText -match '(?i)403|Forbidden|denied by IP ACL') {
                 if ($currentPipIndexUrl -ne $previousPipIndexUrl) {
-                    Write-Host ('[INFO] The mirror refused this IP; switching to {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipMaxAttempts)
-                    Write-Host ('[INFO] 镜像拒绝了本机 IP；{0} 秒后切换到 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipMaxAttempts)
+                    Write-Host ('[INFO] The mirror refused this IP; switching to {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipMaxAttempts)
+                    Write-Host ('[INFO] 镜像拒绝了本机 IP；{0} 秒后切换到 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipMaxAttempts)
                 }
                 else {
-                    Write-Host ('[INFO] The package index refused this IP; retrying {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipMaxAttempts)
-                    Write-Host ('[INFO] 依赖源拒绝了本机 IP；{0} 秒后重试 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipMaxAttempts)
+                    Write-Host ('[INFO] The package index refused this IP; retrying {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipMaxAttempts)
+                    Write-Host ('[INFO] 依赖源拒绝了本机 IP；{0} 秒后重试 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipMaxAttempts)
                 }
             }
             elseif ($currentPipIndexUrl -ne $previousPipIndexUrl) {
-                Write-Host ('[INFO] Package index attempt failed; switching to {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipMaxAttempts)
-                Write-Host ('[INFO] 当前依赖源尝试失败；{0} 秒后切换到 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipMaxAttempts)
+                Write-Host ('[INFO] Package index attempt failed; switching to {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipMaxAttempts)
+                Write-Host ('[INFO] 当前依赖源尝试失败；{0} 秒后切换到 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipMaxAttempts)
             }
             else {
-                Write-Host ('[INFO] Package index attempt failed; retrying {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexUrl, $wait, $attempt, $pipMaxAttempts)
-                Write-Host ('[INFO] 依赖源尝试失败；{0} 秒后重试 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexUrl, $attempt, $pipMaxAttempts)
+                Write-Host ('[INFO] Package index attempt failed; retrying {0} in {1}s (attempt {2}/{3})...' -f $currentPipIndexDisplayUrl, $wait, $attempt, $pipMaxAttempts)
+                Write-Host ('[INFO] 依赖源尝试失败；{0} 秒后重试 {1}（第 {2}/{3} 次）...' -f $wait, $currentPipIndexDisplayUrl, $attempt, $pipMaxAttempts)
             }
             Start-Sleep -Seconds $wait
         }
-        Write-Host ('[INFO] Dependency index attempt {0}/{1}: {2}' -f $attempt, $pipMaxAttempts, $currentPipIndexUrl)
-        ('[STEP] pip index attempt {0}/{1}: {2}' -f $attempt, $pipMaxAttempts, $currentPipIndexUrl) |
+        Write-Host ('[INFO] Dependency index attempt {0}/{1}: {2}' -f $attempt, $pipMaxAttempts, $currentPipIndexDisplayUrl)
+        ('[STEP] pip index attempt {0}/{1}: {2}' -f $attempt, $pipMaxAttempts, $currentPipIndexDisplayUrl) |
             Add-Content -Path $LogFile -Encoding utf8
         for ($stepIndex = $firstFailedStepIndex; $stepIndex -lt $pipSteps.Count; $stepIndex++) {
             $step = $pipSteps[$stepIndex]

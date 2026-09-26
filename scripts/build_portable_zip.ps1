@@ -491,6 +491,7 @@ function Stage-Package {
         "local_tts_service_base.py",
         "local_voice_catalog.py",
         "logging_setup.py",
+        "mirror_probe.py",
         "model_manager.py",
         "PRIVACY.md",
         "requirements.txt",

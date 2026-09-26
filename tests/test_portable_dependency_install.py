@@ -83,11 +83,14 @@ class PortableDependencyInstallTests(unittest.TestCase):
         indexes = (
             "https://mirrors.aliyun.com/pypi/simple/",
             "https://pypi.tuna.tsinghua.edu.cn/simple/",
+            "https://mirrors.cloud.tencent.com/pypi/simple/",
+            "https://repo.huaweicloud.com/repository/pypi/simple/",
             "https://pypi.org/simple/",
         )
 
-        self.assertLess(launcher.index(indexes[0]), launcher.index(indexes[1]))
-        self.assertLess(launcher.index(indexes[1]), launcher.index(indexes[2]))
+        for earlier, later in zip(indexes, indexes[1:]):
+            with self.subTest(earlier=earlier, later=later):
+                self.assertLess(launcher.index(earlier), launcher.index(later))
         pip_install_commands = re.findall(
             r"& \$Python -m pip install[^\r\n]+",
             launcher,
@@ -135,7 +138,7 @@ class PortableDependencyInstallTests(unittest.TestCase):
         )
         self.assertIn("@bootstrapPipIndexArgs", ensure_pip)
         self.assertNotIn("@pipIndexArgs", ensure_pip)
-        self.assertIn("$pipBootstrapBackoffSeconds = @(2, 5)", ensure_pip)
+        self.assertIn("$pipBootstrapBackoffSeconds = @(2, 5, 10, 10)", ensure_pip)
         self.assertNotIn("$pipBackoffSeconds", ensure_pip)
         self.assertIn("try {", ensure_pip)
         self.assertIn("catch {", ensure_pip)
@@ -311,6 +314,20 @@ class PortableDependencyInstallTests(unittest.TestCase):
         # VERSION is read at runtime by tts_routes._read_app_version(); dropping
         # it as "another duplicate" would silently blank the reported version.
         self.assertIn('"VERSION"', app_files)
+
+    def test_build_ships_the_mirror_probe_module(self) -> None:
+        build = (APP_ROOT / "scripts" / "build_portable_zip.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertTrue((APP_ROOT / "mirror_probe.py").is_file())
+        app_files_start = build.index("$appFiles = @(")
+        app_files = build[app_files_start:build.index(")", app_files_start)]
+        self.assertIn('"mirror_probe.py"', app_files)
+        self.assertIn(
+            "Get-PipRankedPipIndexUrls -FallbackUrls",
+            (APP_ROOT / "run_portable.ps1").read_text(encoding="utf-8"),
+        )
 
     def test_repository_python_pth_files_have_no_absolute_or_dist_entries(self) -> None:
         pth_files = [
