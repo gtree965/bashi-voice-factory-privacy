@@ -15,9 +15,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import argparse
+import logging
 import sys
 import time
 
+import flask.cli
 from flask import Flask, jsonify, render_template
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -157,6 +159,69 @@ def create_app() -> Flask:
     return app
 
 
+class _StartupBannerFilter(logging.Filter):
+    """Drop the framework's start-up banner, keep the request log.
+
+    Werkzeug logs its banner through the ``werkzeug`` logger, which propagates
+    to the root handlers, so those lines also landed in app.log. The addresses
+    it lists can be unsuitable when a virtual adapter owns the default route, and the
+    "development server" warning only worries users of a desktop app.
+    """
+
+    _DROPPED_FRAGMENTS = (
+        "Running on",
+        "development server",
+        "Press CTRL+C to quit",
+    )
+
+    def filter(self, record) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            return True
+        return not any(fragment in message for fragment in self._DROPPED_FRAGMENTS)
+
+
+def _silence_framework_startup_banner() -> None:
+    """Stop Flask and Werkzeug from printing their own start-up banner."""
+    flask.cli.show_server_banner = lambda *args, **kwargs: None
+
+    werkzeug_logger = logging.getLogger("werkzeug")
+    if not any(isinstance(entry, _StartupBannerFilter) for entry in werkzeug_logger.filters):
+        werkzeug_logger.addFilter(_StartupBannerFilter())
+
+
+def _lan_display_host(bind_host: str) -> str:
+    """Address for other devices (may be empty).
+
+    The launcher resolves the address to suggest and passes it in
+    ``BASHI_LAN_DISPLAY_HOST``. Binding one concrete IPv4 address is its own
+    answer: that is the address the other device has to open.
+    """
+    value = (os.environ.get("BASHI_LAN_DISPLAY_HOST") or "").strip()
+    if value and not any(character.isspace() for character in value):
+        return value
+
+    bound = (bind_host or "").strip()
+    if bound != "0.0.0.0" and lan_auth.classify_bind_host(bound) == lan_auth.MODE_LAN:
+        return bound
+    return ""
+
+
+def _announce_lan_access_address(bind_host: str, port: int) -> None:
+    """Print the address other devices should open, next to the PIN block."""
+    display_host = _lan_display_host(bind_host)
+    separator = "=" * 60
+    print(separator)
+    if display_host:
+        print("Open this address on the other device / 在其他设备上打开此地址:")
+        print("    http://%s:%s" % (display_host, port))
+    else:
+        print("Address for other devices / 其他设备使用的地址:")
+        print("    See the launcher output above / 见上方启动器输出")
+    print(separator)
+
+
 def _bootstrap_backend_or_exit() -> None:
     try:
         result = bootstrap_backend_selection()
@@ -236,6 +301,10 @@ if __name__ == "__main__":
 
     _run_startup_warmup_if_requested()
 
+    if lan_state.enabled:
+        _announce_lan_access_address(args.host, args.port)
     lan_state.announce_pin()
+
+    _silence_framework_startup_banner()
 
     app.run(debug=False, host=args.host, port=args.port)
