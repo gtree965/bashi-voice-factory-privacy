@@ -342,6 +342,107 @@ class CredentialMaskingTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(expected, result.stdout.strip())
 
+    def test_query_string_and_fragment_are_replaced_in_the_display_url(self) -> None:
+        cases = (
+            (
+                "https://host.example/simple/?token=s3cret-token",
+                "https://host.example/simple/?***",
+            ),
+            (
+                "https://someuser:s3cret-token@host.example/simple/"
+                "?token=s3cret-token&user=someuser",
+                "https://***@host.example/simple/?***",
+            ),
+            (
+                "https://host.example/simple/#fragment-only",
+                "https://host.example/simple/",
+            ),
+            ("https://host.example:8443/simple/", "https://host.example:8443/simple/"),
+            # System.Uri folds "?" into the path for schemes without a query
+            # separator, so the cut has to happen before parsing.
+            (
+                "ftp://someuser:s3cret-token@host.example/simple/?token=s3cret-token",
+                "ftp://***@host.example/simple/?***",
+            ),
+        )
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                result, _elapsed = _run_harness(
+                    "\n".join(
+                        [
+                            "$ErrorActionPreference = 'Stop'",
+                            _function_definitions(("Get-PipIndexDisplayUrl",)),
+                            "Get-PipIndexDisplayUrl -IndexUrl '%s'" % raw,
+                        ]
+                    )
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(expected, result.stdout.strip())
+                for text in (result.stdout, result.stderr):
+                    self.assertNotIn("s3cret-token", text)
+                    self.assertNotIn("someuser", text)
+
+    def test_argument_errors_never_echo_the_address(self) -> None:
+        cases = (
+            # C1: a non-http(s) scheme used to be reported with the whole value.
+            "ftp://someuser:s3cret-token@example.com/simple/",
+            # C2: a value the [System.Uri] cast cannot convert carried itself
+            # into the conversion error; TryCreate now reports a reason only.
+            "https://someuser:s3cret-token@[not-a-host/simple/",
+            "someuser:s3cret-token",
+            "   ",
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                result, _elapsed = _run_harness(
+                    "\n".join(
+                        [
+                            "$ErrorActionPreference = 'Continue'",
+                            _function_definitions(("Get-PipIndexArguments",)),
+                            "try { $null = Get-PipIndexArguments -IndexUrl '%s'; "
+                            "'NO-THROW' } catch { 'THREW: ' + $_.Exception.Message }"
+                            % raw,
+                        ]
+                    )
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("THREW", result.stdout)
+                self.assertIn("http:// or https://", result.stdout)
+                for text in (result.stdout, result.stderr):
+                    self.assertNotIn("s3cret-token", text)
+                    self.assertNotIn("someuser", text)
+
+    def test_non_http_override_leaks_nothing_end_to_end(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            log_path = directory / "launch_log.txt"
+            script = "\n".join(
+                [
+                    "$ErrorActionPreference = 'Continue'",
+                    _function_definitions(FUNCTIONS),
+                    _variable_definitions(VARIABLES),
+                    READ_HOST_STUB,
+                    PROBE_STUB,
+                    "$AppRoot = '%s'" % directory,
+                    "$LogFile = '%s'" % log_path,
+                    "$env:BASHI_PIP_INDEX_URL = "
+                    "'ftp://someuser:s3cret-token@example.com/simple/?token=s3cret-token'",
+                    "try {",
+                    _override_block(),
+                    "} catch { 'THREW: ' + $_.Exception.Message }",
+                ]
+            )
+            result, _elapsed = _run_harness(script)
+
+            log_text = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+
+        self.assertIn("THREW", result.stdout)
+        self.assertIn("http:// or https://", result.stdout)
+        self.assertIn("ftp://***@example.com/simple/?***", result.stdout)
+        for text in (result.stdout, result.stderr, log_text):
+            self.assertNotIn("s3cret-token", text)
+            self.assertNotIn("someuser", text)
+
 
 class ProbeEligibilityTests(unittest.TestCase):
     def test_only_the_built_in_chinese_chain_is_probed(self) -> None:

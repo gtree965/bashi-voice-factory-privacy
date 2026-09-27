@@ -158,9 +158,17 @@ function Invoke-NativeCommandWithUtf8Log {
 function Get-PipIndexArguments {
     param([Parameter(Mandatory = $true)][string]$IndexUrl)
 
-    $uri = [System.Uri]$IndexUrl
-    if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @("http", "https") -or -not $uri.Host) {
-        throw "Invalid pip index URL: $IndexUrl"
+    # Parse with TryCreate and never echo $IndexUrl in a failure: an index from
+    # BASHI_PIP_INDEX_URL may carry credentials in its user information, and a
+    # cast to [System.Uri] would put the whole value into its conversion error.
+    # An unserialisable or non-http(s) address therefore fails with a reason
+    # only, and the caller reports that reason without the address.
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($IndexUrl, [System.UriKind]::Absolute, [ref]$uri) -or
+        -not $uri.IsAbsoluteUri -or
+        -not $uri.Host -or
+        $uri.Scheme -notin @("http", "https")) {
+        throw "Invalid pip index URL. BASHI_PIP_INDEX_URL must be an absolute http:// or https:// address."
     }
     # --trusted-host is not "allow plain http": pip attaches an adapter that
     # skips certificate verification for both the http:// and the https:// URLs
@@ -178,18 +186,37 @@ function Get-PipIndexArguments {
 function Get-PipIndexDisplayUrl {
     param([Parameter(Mandatory = $true)][string]$IndexUrl)
 
-    # An index URL may carry user information when it comes from
-    # BASHI_PIP_INDEX_URL; pip still receives the real URL, but nothing the
-    # launcher prints or logs may show the credentials.
+    # An index URL may carry a credential in its user information or in a query
+    # parameter; pip still receives the real URL, but nothing the launcher
+    # prints or logs may show either, and the fragment is dropped as well.
+    #
+    # The cut has to happen on the raw text: System.Uri only treats "?" as a
+    # query separator for schemes that define one, and folds it into the path
+    # for the rest (ftp://host/simple/?token=x becomes the path
+    # /simple/%3Ftoken=x), which would carry the token straight through.
+    $cutIndex = -1
+    foreach ($delimiter in @("?", "#")) {
+        $position = $IndexUrl.IndexOf($delimiter)
+        if ($position -ge 0 -and ($cutIndex -lt 0 -or $position -lt $cutIndex)) {
+            $cutIndex = $position
+        }
+    }
+    $visible = $IndexUrl
+    $queryPart = ""
+    if ($cutIndex -ge 0) {
+        $visible = $IndexUrl.Substring(0, $cutIndex)
+        if ($IndexUrl[$cutIndex] -eq "?") { $queryPart = "?***" }
+    }
+
     $uri = $null
-    if (-not [System.Uri]::TryCreate($IndexUrl, [System.UriKind]::Absolute, [ref]$uri) -or -not $uri.Host) {
+    if (-not [System.Uri]::TryCreate($visible, [System.UriKind]::Absolute, [ref]$uri) -or -not $uri.Host) {
         return "<unparsable index URL>"
     }
     $userPart = ""
     if ($uri.UserInfo) { $userPart = "***@" }
     $portPart = ""
     if (-not $uri.IsDefaultPort) { $portPart = ":" + $uri.Port }
-    return ("{0}://{1}{2}{3}{4}" -f $uri.Scheme, $userPart, $uri.Host, $portPart, $uri.PathAndQuery)
+    return ("{0}://{1}{2}{3}{4}{5}" -f $uri.Scheme, $userPart, $uri.Host, $portPart, $uri.AbsolutePath, $queryPart)
 }
 
 function Test-PipProbeEligible {
