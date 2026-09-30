@@ -182,6 +182,27 @@ function Assert-LauncherCompatibility {
         throw "Missing staged launcher: $mainLauncher"
     }
 
+    # A second BOM in front of param( is invisible in an editor but disables the
+    # whole parameter block: Windows PowerShell 5.1 strips only the first mark,
+    # the parser no longer sees param( as the script's parameter list, and the
+    # $(...) default inside that list is then evaluated on its own. The staged
+    # copy is what ships, so the bytes are checked here.
+    $launcherBytes = [System.IO.File]::ReadAllBytes($mainLauncher)
+    if ($launcherBytes.Length -lt 9 -or [System.Text.Encoding]::ASCII.GetString($launcherBytes, 3, 6) -ne "param(") {
+        throw ("Staged launcher must start with one UTF-8 BOM followed by param(: {0}" -f $mainLauncher)
+    }
+
+    if (Test-Path -LiteralPath $windowsPowerShell) {
+        $escapedMain = $mainLauncher.Replace("'", "''")
+        $paramCommand = '$ErrorActionPreference = ''Stop''; $tokens = $null; $errors = $null; ' +
+        '$ast = [System.Management.Automation.Language.Parser]::ParseFile(''' + $escapedMain + ''', [ref]$tokens, [ref]$errors); ' +
+        'if (-not $ast.ParamBlock) { throw ''staged launcher has no parameter block'' }'
+        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $paramCommand
+        if ($LASTEXITCODE -ne 0) {
+            throw ("{0} has no parameter block under Windows PowerShell." -f $mainLauncher)
+        }
+    }
+
     foreach ($file in $psFiles) {
         $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
         if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
