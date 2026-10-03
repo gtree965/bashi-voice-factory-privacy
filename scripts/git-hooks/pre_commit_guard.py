@@ -183,6 +183,9 @@ def scan_changes(root: Path, changes: list[tuple[str, str | None]], terms: tuple
     """
     prefix = "" if commit is None else "commit_"
     issues = []
+    # Short ASCII sequences occur by chance in compressed or encoded payloads.
+    # Their path, message and added-text checks remain unchanged.
+    binary_terms = tuple(term for term in terms if not term.isascii() or len(term) >= 6)
 
     def note(kind: str, path: str = "") -> None:
         issues.append(_CONTENT_ISSUES[prefix + kind].format(path=path, commit=commit or ""))
@@ -205,7 +208,7 @@ def scan_changes(root: Path, changes: list[tuple[str, str | None]], terms: tuple
             row.startswith(b"-\t-\t") for row in stat.split(b"\0")
         )
         if binary:
-            if contains_term(decoded(blob), terms):
+            if contains_term(decoded(blob), binary_terms):
                 note("sensitive_binary", label)
             if path not in TRACE_ALLOWLIST and TRACE_BYTES.search(blob):
                 note("residue_binary", label)

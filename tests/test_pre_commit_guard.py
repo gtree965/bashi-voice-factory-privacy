@@ -190,6 +190,37 @@ class GuardTests(unittest.TestCase):
         self.stage("payload.bin", b"\x00PRIVATE_SENTINEL_9X")
         self.assertTrue(any("sensitive" in x for x in self.check()))
 
+    def test_binary_local_terms_keep_length_and_character_boundaries(self):
+        for term, blocked in (("qzx", False), ("qzxpt", False),
+                              ("qzxptr", True), ("甲乙", True)):
+            with self.subTest(term_length=len(term), ascii=term.isascii()):
+                self.terms.write_text(term + "\n", encoding="utf-8")
+                self.stage("payload.bin", b"\x00prefix " + term.upper().encode("utf-8"))
+                issues = self.check()
+                self.assertEqual(any("sensitive" in x for x in issues), blocked)
+
+    def test_short_local_terms_still_block_added_text_paths_and_messages(self):
+        for term in ("qzx", "qzxpt"):
+            with self.subTest(term_length=len(term)):
+                self.terms.write_text(term + "\n", encoding="utf-8")
+                self.stage(content="prefix " + term.upper() + " suffix\n")
+                self.assertTrue(any("added lines" in x for x in self.check()))
+                self.stage(content="ordinary\n")
+                name = "prefix_" + term.upper() + "_suffix.txt"
+                self.stage(name)
+                self.assertTrue(any("staged path" in x for x in self.check()))
+                self.git("rm", "--cached", "--", name)
+                self.assertTrue(any("Local sensitive term" in x for x in
+                                    guard.check_message("prefix " + term.upper(), (term,))))
+
+    def test_short_binary_term_filter_preserves_forced_binary_and_trace_rules(self):
+        self.terms.write_text("qzx\n", encoding="utf-8")
+        self.stage(".gitattributes", "*.dat -diff\n")
+        self.stage("payload.dat", "qzx\n")
+        self.assertEqual(self.check(), [])
+        self.stage("payload.dat", "qzx ChatGPT\n")
+        self.assertTrue(any("residue in staged binary" in x for x in self.check()))
+
     def test_sensitive_old_line_does_not_block_unrelated_addition(self):
         self.stage(content="PRIVATE_SENTINEL_9X\n")
         self.git("commit", "-qm", "initial")
@@ -684,6 +715,42 @@ class PrePushTests(unittest.TestCase):
         head = self.commit("payload.bin", b"\x00prefix ChatGPT suffix", "build: payload")
         self.assertTrue(any("binary" in issue for issue in
                             self.check(self.records(head, remote_sha=base))))
+
+    def test_unpublished_binary_local_terms_keep_length_and_character_boundaries(self):
+        base = self.baseline()
+        for term, blocked in (("qzx", False), ("qzxpt", False),
+                              ("qzxptr", True), ("甲乙", True)):
+            with self.subTest(term_length=len(term), ascii=term.isascii()):
+                self.terms.write_text(term + "\n", encoding="utf-8")
+                head = self.commit("payload.bin", b"\x00prefix " + term.upper().encode("utf-8"),
+                                   "build: payload")
+                issues = self.check(self.records(head, remote_sha=base))
+                self.assertEqual(any("sensitive" in x for x in issues), blocked)
+
+    def test_unpublished_short_terms_still_block_text_paths_and_messages(self):
+        base = self.baseline()
+        for term in ("qzx", "qzxpt"):
+            with self.subTest(term_length=len(term)):
+                self.terms.write_text(term + "\n", encoding="utf-8")
+                head = self.commit("ordinary.txt", "prefix " + term.upper() + "\n",
+                                   "build: text")
+                self.assertTrue(any("lines added by commit" in x for x in
+                                    self.check(self.records(head, remote_sha=base))))
+                head = self.commit("prefix_" + term.upper() + "_suffix.txt", "ordinary\n",
+                                   "build: path")
+                self.assertTrue(any("sensitive term in a path" in x for x in
+                                    self.check(self.records(head, remote_sha=base))))
+                head = self.commit("ordinary.txt", "ordinary\n", "build: " + term.upper())
+                self.assertTrue(any("sensitive term in commit message" in x for x in
+                                    self.check(self.records(head, remote_sha=base))))
+
+    def test_unpublished_short_binary_filter_preserves_trace_rules(self):
+        base = self.baseline()
+        self.terms.write_text("qzx\n", encoding="utf-8")
+        head = self.commit("payload.bin", b"\x00qzx ChatGPT", "build: payload")
+        issues = self.check(self.records(head, remote_sha=base))
+        self.assertTrue(any("residue in binary" in x for x in issues))
+        self.assertFalse(any("sensitive term in binary" in x for x in issues))
 
     def test_merge_commit_is_read_from_its_first_parent(self):
         base = self.baseline()
