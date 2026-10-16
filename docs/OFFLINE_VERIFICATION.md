@@ -30,6 +30,8 @@ It does **not** show:
 
 ## 2. Before you disconnect: what must already be on disk
 
+First satisfy the Windows system prerequisites in the README: long-path support and the Microsoft Visual C++ x64 runtime. A copied Python dependency folder does not establish that these system requirements are ready. Confirm a successful prepared launch on the target computer before disconnecting.
+
 A folder that lacks any of these **cannot** finish the offline tasks. That is a boundary of the
 design, not a defect found by this check; record such a run as "assets not ready".
 
@@ -131,7 +133,7 @@ On a start that took no network branch you should instead find `[STEP] dependenc
 
 Two cautions:
 
-- The launcher prints a banner about first-launch downloads on **every** start, whether or not
+- The launcher prints a preparation/repair download notice on **every** start, whether or not
   anything is downloaded. Treat it as fixed text; the markers above are the signal.
 - This log covers the launcher only. It says nothing about what the app does after it starts.
 
@@ -296,6 +298,8 @@ Operator and date:
 
 ## 2. 断网前：磁盘上必须已有的东西
 
+先满足 README 所列的 Windows 系统前提：长路径支持和 Microsoft Visual C++ x64 运行库。复制了 Python 依赖目录不代表这些系统条件已经就绪；请先在目标电脑上确认准备后的程序能成功启动，再断网。
+
 缺任何一项，都**不能**完成离线任务。这是设计边界，不是本检查发现的缺陷；这种运行请记为
 “资产未就绪”。
 
@@ -380,7 +384,7 @@ echo %ERRORLEVEL%
 
 两点提醒：
 
-- 启动器**每次**启动都会打印一段关于首次下载的横幅，不论是否真的在下载。把它当作固定文字；
+- 启动器**每次**启动都会打印准备或修复时可能下载的提示，不论是否真的在下载。把它当作固定文字；
   以上述标记为准。
 - 这份日志只覆盖启动器，不说明应用启动之后做了什么。
 

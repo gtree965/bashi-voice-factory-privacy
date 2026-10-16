@@ -1,15 +1,15 @@
-﻿[English](README.md) | **中文文档**
+[English](README.md) | **中文文档**
 
 # 巴适声工厂 · 隐私版 (Bashi Voice Factory Privacy Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**版本：** 0.1.5
+**版本：** 0.1.6
 
-完全离线运行的本地语音工厂网页应用。首次启动联网下载完依赖与模型之后，**所有文字转语音、语音转文字、音频生成、文件保存都在你自己的电脑上完成**，没有任何音频数据上传云端。
+在自己电脑上运行的语音工具：合成与转写使用本地模型，不向云端语音服务上传文本或音频。断网使用前须联网备齐所需资产。默认仅本机访问；主动开启局域网后，数据会经明文 HTTP 在设备之间传输。
 
 **作者：** Alex Li (ncorecpu@gmail.com)
 **许可：** [MIT License](LICENSE)
@@ -19,7 +19,15 @@
 
 ---
 
-## 🆕 v0.1.5 更新内容
+## 🆕 v0.1.6 更新内容
+
+- 局域网一次性 PIN、失败次数限制、Host 与跨站请求检查；HTTP 仍未加密，仅用于可信网络。见[安全边界与修复](SECURITY.md)。
+- 依赖源测速排序和回退，恢复 HTTPS 证书校验；启动询问等待 20 秒，默认仅本机，改进局域网地址提示。
+- 随包提供双语隐私说明和断网核查方法；出包前核对手册链接及提取后的可读文本。
+
+---
+
+## v0.1.5 更新内容
 
 - **发行包内首次附带完整第三方许可材料：** `THIRD_PARTY.md`、`THIRD_PARTY_GAPS.md` 与 `licenses/` 整目录，共 34 份（含上游 Qwen3-TTS-GGUF 转换运行时的 MIT 原文）。
 - **界面页脚许可表述修正：** 改为「项目代码 MIT；模型与第三方组件遵循各自许可条款」，不再对整个发行包作统一授权承诺。
@@ -62,12 +70,13 @@
 
 ### 🛡️ 智能首次下载，断点续传
 - **HTTP Range / resume 内置** — 一次 WiFi 闪断不会让 2.2 GB 的 GGUF 下载从零开始。
-- **3 次重试，指数退避** — pip 依赖与模型文件都有同样的兜底逻辑。
-- **国内友好镜像**：pip 按阿里云 → 清华 → PyPI 依次回退，某个镜像不可达或拒绝本机 IP 时自动换源；GGUF 运行模型走 ModelScope；STT 模型走 hf-mirror.cn。
+- **失败重试与恢复** — 依赖安装失败时重试或换源；模型下载保留断点和指数退避。
+- **下载源选择**：中国语言或时区环境下先测速排序，失败时换源；合成资产来自 ModelScope，转写模型优先 hf-mirror.com、失败后回退上游。
 
 ### 📱 局域网共享，手机平板可访问
-- 首次启动询问是否绑定 `0.0.0.0`，允许同一 WiFi 下其他设备访问。
-- 手机浏览器输入电脑的局域网 IP 即可使用，跟本地网页一样流畅。
+- 启动时询问是否允许局域网内其他设备连接（等待 20 秒，默认仅本机）。
+- 允许后，控制台会显示访问地址（例如 `http://192.168.1.52:5050`）和一次性 6 位 PIN，其他设备须先输入 PIN。
+- 链路是明文 HTTP，请只在信任的网络上开启。PIN 能挡住什么、挡不住什么，见 [SECURITY.md](SECURITY.md)。
 
 ---
 
@@ -75,13 +84,15 @@
 
 ### 最简流程
 
+**系统前提：** 64 位 Windows、Windows 长路径支持，以及 [Microsoft Visual C++ x64 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe)。全新 Windows 或隔离环境可能需要单独安装此运行库，便携 ZIP 不包含它。若启动器提示长路径未启用，请先按控制台指引完成设置，再重试。断网前须备齐这些系统条件。
+
 1. 把下载的 zip 解压到任意文件夹（桌面或随便哪里都行）。
 2. 在解压后的顶层目录里 **双击 `Start_启动.bat`**。
 3. 首次启动会：
    - 安装 Python 依赖（约 700 MB，根据网速 / CPU 不同需要 8-15 分钟）
    - 缺少 GGUF 模型时自动下载（约 2.2 GB，2-15 分钟；可按 Ctrl+C 取消，下次启动会续传）
    - 启动完成后，命令行窗口会显示访问地址；请在你想用的浏览器里手动打开 `http://127.0.0.1:5050`（应用不会自动打开浏览器）
-4. 首次完成后，**之后每次启动都是离线**，启动也会更快（具体用时取决于电脑性能）。
+4. 依赖和所需模型备齐后，核心任务可断网使用。断网前须在模型管理器下载转写模型及 VAD；修复和可选下载仍需联网。
 
 ### 进阶
 
@@ -91,24 +102,14 @@
 
 ## 🌐 网络行为说明
 
-**隐私承诺**：本程序不主动联网、不上传音频、不收集使用数据。**程序永远不会自动检查任何在线资源。** 所有联网行为均在下文有完整说明，且需要用户主动触发 — 无后台轮询、无统计分析、无静默更新探测。
+合成与转写使用本地模型，不向云端语音服务上传文本或音频。默认仅本机访问；局域网模式下，数据会经明文 HTTP 在设备之间传输。
 
-**仅首次启动**（一次性，约 700 MB + 约 2.2 GB）：
+- 首次准备或依赖检查失败时，启动器可能安装、修复依赖和引导 pip；合成资产未齐时会下载。中国语言或时区环境先对阿里云、清华、腾讯云、华为云、PyPI 测速，再按结果安装和回退；其他环境用 PyPI。内置 HTTPS 源校验证书；自定义 `BASHI_PIP_INDEX_URL` 不测速，HTTP 覆盖源没有 HTTPS 保护。
+- 用户下载转写模型时先尝试 `hf-mirror.com`，失败后用 `huggingface.co`；同时从 GitHub 准备缺失的 Silero VAD。说话人标注界面默认隐藏，相关模型只在用户请求时从 GitHub 下载。
+- 可选 NVIDIA CUDA 包由用户点击升级后从 ModelScope 下载。“查看最新版本”只在浏览器打开 `https://gitee.com/gtree965/`；没有遥测或后台更新轮询。
+- 断网前须准备好合成资产、转写模型及 VAD。可选下载和修复仍需联网，不能无条件承诺每次后续启动都离线。
 
-- pip 依赖来自 `https://mirrors.aliyun.com/pypi/simple/`，失败时依次回退清华、PyPI（海外用户仅用 PyPI）
-- GGUF 模型来自 `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime`
-- STT 模型（用户主动点击下载）来自 `https://hf-mirror.com/csukuangfj/...`（备用 HuggingFace）
-
-**运行时网络行为**：零。文字转语音、音视频转文字、音频导出全部本机完成。
-
-**可选 CUDA 加速**（NVIDIA 用户，仅用户主动触发）：检测到 NVIDIA 显卡时，UI 会显示"升级到 CUDA 加速"横幅。点击后从 `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-cuda-runtime` 下载一次性 ~595 MB CUDA 运行时附加包。完全可选 — 不下载也能用 Vulkan 路线。不点就不会下载任何东西。
-
-**手动更新检查**（仅用户主动触发，永不自动）：UI 右下角"查看最新版本"按钮在新浏览器标签页打开发布页。也可以随时手动访问：
-
-- GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
-- Gitee: <https://gitee.com/gtree965/>
-
-**离网 / 敏感场景部署**（银行、医疗、政务、企业内网）：在联网机器上完成首次启动的所有下载后，整个 `bashi-voice-factory-privacy-v0.x.0/` 解压文件夹可以原样拷贝到离网/物理隔离机器上运行，之后所有功能均无需任何网络访问。程序没有任何遥测端点需要防火墙拦截，没有自动更新守护进程，也没有回调 URL。可用 Wireshark / 资源监视器在正常使用过程中监测出站流量验证 — 应当全程静默。
+[隐私说明](PRIVACY.md) 列出下载来源、回退与覆盖设置的边界。[断网验证方法](docs/OFFLINE_VERIFICATION.md) 提供辅助脚本和空白记录模板，不宣称某个发行包已经通过。隔离环境使用前，先联网备齐所需资产，再按方法核查；TCP 轮询和代理观察均有盲区，也不是抓包。
 
 ---
 
@@ -161,9 +162,9 @@
 | 现象 | 可能原因 / 处理 |
 |---|---|
 | 双击 `Start_启动.bat` 报 "Array index expression is missing" | 旧版 zip。请从 GitHub Releases 或 Gitee 重新下载最新版；该 BOM 问题在 v0.1.0 正式版已修复 |
-| pip 安装途中 WiFi 闪断后中止 | 自动重试 3 次（5/30/120 秒退避）。3 次都失败时，修好网络后重新运行启动器即可（pip 会跳过已装好的包） |
+| pip 安装途中 WiFi 闪断后中止 | 启动器会重试或切换依赖源。仍失败时修复连接后重启，已安装部分可从缓存复用。 |
 | pip 安装失败并提示 "long path support" | 按启动器提示，在管理员 PowerShell 中运行一次注册表命令，然后重新启动 |
-| 所有镜像都装不上，或镜像拒绝本机 IP（`403` / `denied by IP ACL`） | 启动器已按阿里云 → 清华 → PyPI 自动换源。若要指定某一个源，启动前设置 `BASHI_PIP_INDEX_URL`，例如 `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
+| 所有镜像都装不上，或镜像拒绝本机 IP（`403` / `denied by IP ACL`） | 中国环境下先对五个内置源测速排序，失败时换源；其他环境用 PyPI。若要指定某一个源，启动前设置 `BASHI_PIP_INDEX_URL`，例如 `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
 | GGUF 下载中断 | 同样自动重试，且支持 HTTP Range 续传，重新运行启动器从 `.part` 文件续传 |
 | 启动报 "No usable backend was found" | 查 `app.log`（带时间戳的结构化应用日志）和 `launch_log.txt`（启动器步骤与原生 stderr）。常见原因：GGUF 运行 DLL 缺失、显卡驱动过旧、可用内存 <8 GB。程序会打印中英双语提示告知具体原因 |
 | STT 下载闪过 "镜像失败" | v0.1.0 正式版不会出现 — 是旧版残留的 ModelScope 路径，已删除 |
@@ -176,13 +177,15 @@
 ## 📦 zip 包目录结构
 
 ```
-bashi-voice-factory-privacy-v0.1.5/
+bashi-voice-factory-privacy-v0.1.6/
 ├── Start_启动.bat                                       ← 双击这里
 ├── Start_CPU_only_仅CPU启动.bat                         ← 强制 CPU 模式（入门集显 A/B 对比用）
 ├── README.md                                            ← 英文文档
 ├── README_CN.md                                         ← 本文件
 ├── LICENSE                                              ← MIT 许可证
 ├── VERSION                                              ← 发布版本号
+├── PRIVACY.md / SECURITY.md                            ← 网络与安全边界
+├── docs/OFFLINE_VERIFICATION.md                         ← 方法与空白记录模板
 ├── 巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf
 │                                                         ← 中英双语帮助 PDF
 ├── bashi-privacy-app/                                   ← 程序代码 + 嵌入式 Python

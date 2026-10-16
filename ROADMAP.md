@@ -13,7 +13,8 @@
 | **v0.1.3** | Windows reliability, logging, streaming UX, and STT quality/safety | Released 2026-08-03 | shipped |
 | **v0.1.4** | Startup warmup, PDF user-guide fix and build guard, Gitee mirror | Released 2026-09 | shipped |
 | **v0.1.5** | Third-party license materials shipped inside the package | Released 2026-09-19 | shipped |
-| **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | 3-4 weeks after v0.1.0 |
+| **v0.1.6** | LAN access control, dependency transport security and release verification | Windows package | [Release status](https://github.com/gtree965/bashi-voice-factory-privacy/releases/tag/v0.1.6) |
+| **v0.2.0** | Cross-platform: macOS Apple Silicon + Linux Ubuntu/Debian | Planned | no committed date |
 | **v0.3.0** | Native ARM64 Windows + formal hardware testing | Planned / research | longer term |
 | **v0.4.0+** | NPU acceleration research, optional STT engines, manual update UX | Idea pool | — |
 

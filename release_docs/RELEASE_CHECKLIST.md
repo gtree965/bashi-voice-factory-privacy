@@ -56,9 +56,12 @@ Use this checklist for every tagged release.
   # build machine. Different generators produced different forms of the same bug
   # (file:///C:/... and http://markdownpanel-virtualhost/...), which is why the
   # gate below rejects everything that is not HTTPS rather than just "file:".
-  GH=https://github.com/gtree965/bashi-voice-factory-privacy/blob/main
+  GH=https://github.com/gtree965/bashi-voice-factory-privacy/blob/v0.1.6
   sed -e "s|href=\"LICENSE\"|href=\"$GH/LICENSE\"|g" \
       -e "s|href=\"VERSION\"|href=\"$GH/VERSION\"|g" \
+      -e "s|href=\"SECURITY.md\"|href=\"$GH/SECURITY.md\"|g" \
+      -e "s|href=\"PRIVACY.md\"|href=\"$GH/PRIVACY.md\"|g" \
+      -e "s|href=\"docs/OFFLINE_VERIFICATION.md\"|href=\"$GH/docs/OFFLINE_VERIFICATION.md\"|g" \
       <tmp>/guide_raw.html > <tmp>/bashi_privacy_user_guide.html
 
   # Gate 1 (HTML): no non-HTTPS link may survive. Anchors and the author mailto
@@ -75,6 +78,9 @@ Use this checklist for every tagged release.
   .venv/Scripts/python.exe -m pip install -r requirements-build.txt   # once
   .venv/Scripts/python.exe scripts/check_pdf_links.py \
     "release_docs/巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf"
+  .venv/Scripts/python.exe scripts/check_pdf_text.py \
+    "release_docs/巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf" \
+    --text-out <tmp>/guide_text.txt --report <tmp>/guide_text_report.json
   ```
 
   Order is English, page break, Chinese. Pandoc warns that it cannot load `zh-CN` translations;
@@ -88,6 +94,29 @@ Use this checklist for every tagged release.
   alone is not success (the CLI can exit before the file is written). The target must
   exist, be non-empty, and have a SHA-256 different from the pre-rebuild file. CDP
   `Page.printToPDF` with `preferCSSPageSize` is an accepted equivalent print path.
+
+  The readable-text check requires the maintainer's untracked local term list. It
+  scans the extracted text, including short words that are excluded from binary
+  scans. An empty or undecoded page is a failure to investigate, not a clean scan.
+  Review the rendered pages against the extracted English and Chinese text as well.
+  Record the PDF hash, extractor version and page counts; compare the PDF inside the
+  final ZIP byte for byte with this checked file. Raw compressed-stream or byte
+  searches do not replace the text check. Change the version-bound link base above
+  for each new release; verify those links after the version tag is public.
+
+- Build with Windows PowerShell 5.1. The script explicitly imports its Archive
+  module from `$PSHOME/Modules`, requires version 1.0.1.0, and logs the actual
+  module version and path so an inherited PowerShell 7 module cannot change the build.
+- Exercise the final ZIP through `Start_启动.bat` and `run_portable.bat`. Prepare
+  the required synthesis and transcription assets, then verify synthesis, MP3
+  export, transcription and TXT/SRT/VTT exports with networking disabled in default
+  local mode. Record the exact ZIP hash, source commit, environment and attempts.
+  Confirm the target Windows system has long-path support and the Microsoft Visual
+  C++ x64 runtime before treating a copied dependency directory as ready. Retain
+  environment-preparation failures separately from completed product tasks.
+  Use [`docs/OFFLINE_VERIFICATION.md`](../docs/OFFLINE_VERIFICATION.md); its blank
+  record is a method, not an acceptance result. Observe connection attempts in a
+  separate network-enabled run, retaining the TCP/proxy coverage limits.
 
 - **License pack gate.** Before every release, confirm the final ZIP contains
   `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the whole `licenses/` tree — 34 files

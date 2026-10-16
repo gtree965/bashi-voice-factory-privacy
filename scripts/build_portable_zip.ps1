@@ -25,6 +25,26 @@ if (-not $Version) {
 
 $PackageName = "bashi-voice-factory-privacy-v$Version"
 
+function Import-PortableArchiveModule {
+    if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSEdition -ne 'Desktop') {
+        throw 'Build the portable package with Windows PowerShell 5.1.'
+    }
+    $manifest = Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Archive\Microsoft.PowerShell.Archive.psd1'
+    if (-not (Test-Path -LiteralPath $manifest)) {
+        throw 'The Windows PowerShell Archive module is missing.'
+    }
+    Remove-Module Microsoft.PowerShell.Archive -Force -ErrorAction SilentlyContinue
+    Import-Module -Name $manifest -Global -Force -ErrorAction Stop
+    $utilityManifest = Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1'
+    Import-Module -Name $utilityManifest -Global -Force -ErrorAction Stop
+    $command = Get-Command Compress-Archive -ErrorAction Stop
+    if ($command.Module.Version.ToString() -ne '1.0.1.0' -or
+        -not $command.Module.Path.StartsWith((Split-Path -Parent $manifest), [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The portable build requires the Windows PowerShell Archive module 1.0.1.0.'
+    }
+    Write-Host ('Archive module: {0}; path: {1}' -f $command.Module.Version, $command.Module.Path)
+}
+
 function Assert-PathInside {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -266,6 +286,11 @@ function Assert-PdfUserGuideSafe {
     & $python $checker $PdfPath
     if ($LASTEXITCODE -ne 0) {
         throw ("PDF user guide failed the release gate (exit {0}): {1}" -f $LASTEXITCODE, $PdfPath)
+    }
+    $textChecker = Join-Path $AppRoot 'scripts\check_pdf_text.py'
+    & $python $textChecker $PdfPath
+    if ($LASTEXITCODE -ne 0) {
+        throw ("PDF readable-text gate failed (exit {0}): {1}" -f $LASTEXITCODE, $PdfPath)
     }
 }
 
@@ -515,6 +540,7 @@ function Stage-Package {
         "mirror_probe.py",
         "model_manager.py",
         "PRIVACY.md",
+        "SECURITY.md",
         "requirements.txt",
         "run_portable.bat",
         "run_portable.ps1",
@@ -536,6 +562,7 @@ function Stage-Package {
     foreach ($file in $appFiles) {
         Copy-RelativeFile -SourceRoot $AppRoot -RelativePath $file -DestRoot $appDest
     }
+    Copy-RelativeFile -SourceRoot $AppRoot -RelativePath 'docs\OFFLINE_VERIFICATION.md' -DestRoot $appDest
 
     foreach ($dir in @("bashi_tts_kernel", "data", "engines", "templates", "static\css", "static\images", "static\js", "static\audio\style_previews")) {
         Copy-RelativeDirectory -SourceRoot $AppRoot -RelativePath $dir -DestRoot $appDest
@@ -605,6 +632,10 @@ exit /b %ERRORLEVEL%
         }
         Copy-Item -LiteralPath $src -Destination (Join-Path $StageRoot $name) -Force
     }
+    foreach ($name in @('PRIVACY.md', 'SECURITY.md')) {
+        Copy-RelativeFile -SourceRoot $AppRoot -RelativePath $name -DestRoot $StageRoot
+    }
+    Copy-RelativeFile -SourceRoot $AppRoot -RelativePath 'docs\OFFLINE_VERIFICATION.md' -DestRoot $StageRoot
 
     # G02/G03 license pack — the two inventories plus the whole licenses/ tree
     # ship verbatim at the package root (same level as LICENSE / README.md) so
@@ -855,6 +886,8 @@ function Compress-StagedPackage {
 
     throw ("Compress-StagedPackage made no attempt at all (MaxAttempts = {0})." -f $MaxAttempts)
 }
+
+Import-PortableArchiveModule
 
 if ($NoPythonOnly) {
     $stage = Join-Path $DistRoot "$PackageName-no-python"

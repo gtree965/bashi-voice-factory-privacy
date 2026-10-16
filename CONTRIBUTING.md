@@ -50,6 +50,10 @@ py -3.12 -m venv .venv
   tests.test_voice_catalog
 ```
 
+Measured on 2026-10-16 with official Python 3.12.10 and its standard library only:
+`Ran 167 tests`, `OK (skipped=5)`, exit 0 (about 108 s on this machine). No third-party
+package was installed for this check. The following earlier measurement is historical.
+
 Measured on 2026-09-21 (Windows, Python 3.12.10, pip 25.0.1): `Ran 144 tests`, `OK (skipped=5)`,
 exit code 0. Timing is a **single measurement on one machine** (about 54 s here), not a promise.
 
@@ -231,6 +235,8 @@ py -3.12 -m venv .venv
   tests.test_streaming_retry_boundaries `
   tests.test_voice_catalog
 ```
+
+2026-10-16 使用官方 Python 3.12.10、仅标准库实测：`Ran 167 tests`、`OK (skipped=5)`、退出码 0（本机约 108 秒）。该检查没有安装第三方包。下面保留此前的历史测量。
 
 2026-09-21 实测（Windows、Python 3.12.10、pip 25.0.1）：`Ran 144 tests`、`OK (skipped=5)`、
 退出码 0。耗时是**本机单次测量**（约 54 秒），不是通用承诺。

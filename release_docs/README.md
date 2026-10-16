@@ -1,15 +1,15 @@
-﻿**English** | [中文文档](README_CN.md)
+**English** | [中文文档](README_CN.md)
 
 # Bashi Voice Factory Privacy Edition (巴适声工厂 · 隐私版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)](VERSION)
 ![Python](https://img.shields.io/badge/python-3.12_embed-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-**Version:** 0.1.5
+**Version:** 0.1.6
 
-A fully offline desktop web app for high-quality text-to-speech and speech-to-text. After the one-time first-launch download, **everything runs on your own machine** — TTS synthesis, audio export, transcription, and storage. No audio data ever leaves your computer.
+A local desktop web app for text-to-speech and speech-to-text. Synthesis and transcription use local models without uploading text or audio to cloud speech services. Prepare the required assets online before offline use. Access defaults to this computer; optional LAN access transfers data between devices over plain HTTP.
 
 **Author:** Alex Li (ncorecpu@gmail.com)
 **License:** [MIT License](LICENSE)
@@ -19,7 +19,15 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 ---
 
-## 🆕 What's New in v0.1.5
+## 🆕 What's New in v0.1.6
+
+- One-time LAN PIN with lockouts, Host and cross-site request checks; plain HTTP still requires a trusted network. See [security boundaries and fixes](SECURITY.md).
+- Dependency-source testing and fallback, with HTTPS certificate verification restored. The launcher shows a 20-second local-only default prompt and a more useful LAN address.
+- Bilingual privacy and offline-verification instructions ship with the package. The manual's extracted text and links are checked before packaging.
+
+---
+
+## What's New in v0.1.5
 
 - **Complete third-party license materials now ship inside the package:** `THIRD_PARTY.md`, `THIRD_PARTY_GAPS.md`, and the entire `licenses/` directory — 34 files in total — including the upstream Qwen3-TTS-GGUF conversion runtime's MIT license text.
 - **UI footer license wording corrected:** it now reads "project code: MIT; models and third-party components follow their respective license terms" and no longer makes a blanket license promise for the whole distribution.
@@ -62,12 +70,13 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 ### 🛡️ Smart First-Launch Download with Resume
 - **HTTP Range / resume** built in — a transient WiFi drop won't restart your 2.2 GB GGUF download from zero.
-- **3-attempt retry** with exponential backoff for both pip dependencies and model files.
-- **China-friendly mirrors**: pip falls back through Aliyun → Tsinghua → PyPI when a mirror is unreachable or refuses your IP; GGUF runtime hosted on ModelScope; STT models hosted on hf-mirror.cn.
+- **Recovery on failure**: package-source fallback for dependencies; resume and backoff for model downloads.
+- **Download-source selection**: in Chinese language/time-zone environments, pip sources are tested and ranked, with fallback on failure; synthesis assets use ModelScope and transcription models use hf-mirror.com with upstream fallback.
 
 ### 📱 LAN Sharing for Phone / Tablet Use
-- First-launch prompt: bind to `0.0.0.0` to allow access from any device on the same WiFi.
-- Compatible with mobile browsers — type the LAN IP and use it like a local web app.
+- At start-up the launcher asks whether other devices on your network may connect (20 seconds, local-only by default).
+- If you allow it, the console shows the address to open, for example `http://192.168.1.52:5050`, and a one-time six-digit PIN that other devices must enter first.
+- The connection is plain HTTP: only enable it on a network you trust. See [SECURITY.md](SECURITY.md) for what the PIN does and does not protect.
 
 ---
 
@@ -75,13 +84,15 @@ A fully offline desktop web app for high-quality text-to-speech and speech-to-te
 
 ### Easiest path
 
+**System prerequisites:** 64-bit Windows, Windows long-path support, and the [Microsoft Visual C++ x64 runtime](https://aka.ms/vs/17/release/vc_redist.x64.exe). A fresh Windows or isolated environment may need that runtime installed separately; the portable ZIP does not include it. If the launcher reports disabled long-path support, follow the instructions it prints before retrying. Prepare these system requirements before disconnecting.
+
 1. Unzip the downloaded file to any folder (Desktop or wherever you like).
 2. **Double-click `Start_启动.bat`** at the top level of the extracted folder.
 3. First launch will:
    - Install Python dependencies (~700 MB, 8-15 min depending on network/CPU)
    - Automatically download the GGUF model when missing (~2.2 GB, 2-15 min depending on network; Ctrl+C cancels and the next launch resumes)
    - When startup finishes, the console window shows the address; open `http://127.0.0.1:5050` yourself in the browser of your choice (the app does not open a browser automatically)
-4. After first launch, **all subsequent launches are offline** and start faster (actual time depends on your computer).
+4. With dependencies and the models you need prepared, core tasks can run offline. Download the transcription model and VAD in Model Manager before disconnecting; repair and optional downloads still need a connection.
 
 ### Advanced
 
@@ -91,24 +102,14 @@ Users who prefer to bypass the top-level launcher can run `bashi-privacy-app\run
 
 ## 🌐 Network Behavior
 
-**Privacy commitment**: this app does not phone home, does not upload audio, does not collect telemetry. **The app never automatically checks any internet resource.** Every network operation is documented below and requires explicit user action — no background polling, no analytics, no silent update probes.
+Synthesis and transcription use local models and do not upload text or audio to cloud speech services. Default access is local-only; in LAN mode, data travels between devices over plain HTTP.
 
-**First launch only** (one-time, ~700 MB + ~2.2 GB):
+- The launcher may install or repair dependencies, bootstrap pip and download missing synthesis assets. With a Chinese language or time zone, it tests Aliyun, Tsinghua, Tencent Cloud, Huawei Cloud and PyPI, then installs in ranked order with fallback; elsewhere it uses PyPI. Built-in HTTPS sources retain certificate checks. A custom `BASHI_PIP_INDEX_URL` skips testing and an HTTP override has no HTTPS protection.
+- Transcription-model downloads use `hf-mirror.com`, then `huggingface.co`; downloading a model also prepares missing Silero VAD from GitHub. The optional speaker-label models are hidden by default and downloaded from GitHub only when requested.
+- The optional NVIDIA CUDA add-on is downloaded from ModelScope when you request the upgrade. The update button opens `https://gitee.com/gtree965/` in a browser tab. There is no telemetry or background update polling.
+- Prepare synthesis assets, the transcription model and VAD before disconnecting. Optional downloads and repair require a connection; a later launch is not unconditionally offline.
 
-- pip dependencies from `https://mirrors.aliyun.com/pypi/simple/`, falling back to Tsinghua then PyPI (PyPI only, outside China)
-- GGUF model from `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-1.7b-customvoice-gguf-runtime`
-- STT model (when user opts in) from `https://hf-mirror.com/csukuangfj/...` (or HuggingFace fallback)
-
-**Runtime network activity**: zero. TTS synthesis, STT transcription, and audio export are 100% on-device.
-
-**Optional CUDA acceleration** (NVIDIA users, user-initiated only): when an NVIDIA GPU is detected, the UI shows an "Upgrade to CUDA acceleration" banner. Clicking it downloads a one-time ~595 MB CUDA runtime add-on from `https://modelscope.cn/models/gtree592/bashi-qwen3-tts-cuda-runtime`. This is entirely optional — the Vulkan path works on NVIDIA without it. Nothing downloads unless you click.
-
-**Manual update check** (user-initiated only, never automatic): the UI footer "Check for updates" button opens a release page in a new browser tab. You can also check manually anytime at:
-
-- GitHub Releases: <https://github.com/gtree965/bashi-voice-factory-privacy/releases>
-- Gitee: <https://gitee.com/gtree965/>
-
-**Air-gapped / sensitive deployment** (banks, healthcare, government, internal corporate networks): after first-launch downloads complete on a connected machine, the entire `bashi-voice-factory-privacy-v0.x.0/` extracted folder can be copied to an offline / physically-isolated machine and run with zero further network access required. The app has no telemetry endpoints to firewall, no auto-update worker, no callback URLs. To verify, monitor outbound traffic with Wireshark / Resource Monitor during a normal session — it should be silent.
+The [privacy policy](PRIVACY.md) lists the download sources, fallback and override boundaries. The [offline verification method](docs/OFFLINE_VERIFICATION.md) includes helper scripts and a blank record template; it does not claim any package has passed. For isolated use, prepare the needed assets online, then follow that method. TCP polling and proxy observations have limits and are not packet captures.
 
 ---
 
@@ -161,9 +162,9 @@ Beyond the specific machines benchmarked above, here is how the auto-selected ac
 | Symptom | Likely cause / fix |
 |---|---|
 | `Start_启动.bat` shows "Array index expression is missing" | Old zip — re-download the latest from GitHub Releases or Gitee; the BOM bug was fixed in v0.1.0 final |
-| pip install stops mid-way after WiFi blip | Retry triggers automatically (3 attempts, 5s/30s/120s backoff). If all 3 fail, fix network and re-run the launcher — pip caches what's already installed |
+| pip install stops mid-way after WiFi blip | The launcher retries or switches package sources. If installation still fails, fix the connection and restart; completed installs can be reused from cache. |
 | pip install fails with a "long path support" message | Run the registry one-liner from the launcher's advisory in an Administrator PowerShell, then re-launch |
-| pip install fails on every mirror, or a mirror refuses your IP (`403` / `denied by IP ACL`) | The launcher already retries Aliyun → Tsinghua → PyPI. To force one index, set `BASHI_PIP_INDEX_URL` before launching, e.g. `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
+| pip install fails on every mirror, or a mirror refuses your IP (`403` / `denied by IP ACL`) | The launcher ranks five built-in indexes in Chinese environments and switches on failure; elsewhere it uses PyPI. To force one index, set `BASHI_PIP_INDEX_URL` before launching, e.g. `set BASHI_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/` |
 | GGUF download interrupted | Same: retries with HTTP Range/resume; re-run launcher to continue from `.part` file |
 | App exits with "No usable backend was found" | Check `app.log` (structured, timestamped application logs) and `launch_log.txt` (launcher steps and raw stderr) — usually GGUF runtime DLL missing, GPU driver outdated, or RAM <8 GB. App now prints a bilingual advisory with specific causes |
 | STT download says "镜像失败" | Should not happen in v0.1.0 final — old behavior from removed ModelScope path |
@@ -176,13 +177,15 @@ Full log paths: `bashi-privacy-app\app.log` and `bashi-privacy-app\launch_log.tx
 ## 📦 What's in the Zip
 
 ```
-bashi-voice-factory-privacy-v0.1.5/
+bashi-voice-factory-privacy-v0.1.6/
 ├── Start_启动.bat                                       ← double-click here
 ├── Start_CPU_only_仅CPU启动.bat                         ← force CPU mode (entry-level iGPU A/B)
 ├── README.md                                            ← this file
 ├── README_CN.md                                         ← Chinese version
 ├── LICENSE                                              ← MIT license
 ├── VERSION                                              ← release version
+├── PRIVACY.md / SECURITY.md                            ← network and security boundaries
+├── docs/OFFLINE_VERIFICATION.md                         ← method and blank record template
 ├── 巴适声工厂隐私版使用手册_Bashi_Voice_Factory_Privacy_Edition_User_Guide.pdf
 │                                                         ← help PDF (bilingual)
 ├── bashi-privacy-app/                                   ← app code + embedded Python
